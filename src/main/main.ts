@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveTheme, themeCss, type ThemeName } from "./theme";
 import { WindowTransport } from "./window-transport";
+import type { Transport } from "./transport";
 import { AgentHost } from "./agent-host";
 import { TreeHost } from "./tree-host";
 import { buildPiLaunch, type PiLaunch } from "./pi-launcher";
@@ -372,6 +373,22 @@ function setThemePref(t: "system" | ThemeName): void {
 
 let importRunning = false;
 
+// After an import, the agent must re-scan sources/ or it will not know the new
+// source (its catalogue is built on session start). Tell the user when that
+// could not happen right now.
+async function notifyRediscovery(transport: Transport, h: AgentHost, imported: boolean): Promise<void> {
+  if (!imported) {
+    h.refreshSources();
+    return;
+  }
+  const outcome = await h.rediscoverSources();
+  if (outcome === "busy") {
+    transport.post({ type: "notify", level: "info", message: "The agent is busy; new sources become available to it after the current turn (or via a new session)." });
+  } else if (outcome === "named-collection") {
+    transport.post({ type: "notify", level: "info", message: `Imported sources are not part of the active collection "${h.activeCollectionName}". Switch to all sources to use them.` });
+  }
+}
+
 function importWorkers(): { pdf: string; split: string } {
   // Packaged: main.js is inside app.asar, the workers are asarUnpack'ed beside it.
   const at = (f: string) => (app.isPackaged ? unpackedPath(join(__dirname, f)) : join(__dirname, f));
@@ -438,7 +455,7 @@ async function importSources(): Promise<void> {
       : importFiles(picked.filePaths, sourcesDir, importWorkers(), progress),
   );
   if (!result) return;
-  host.refreshSources();
+  await notifyRediscovery(transport, host, result.imported > 0);
 
   const total = result.imported + result.skipped.length + result.errors.length;
   if (folderMode && total === 0) {
@@ -493,7 +510,7 @@ async function promptRecoverIncompleteImports(win: BrowserWindow, host: AgentHos
       resumeIncompleteImports(incompletes, sourcesDir, importWorkers(), progressTo(transport)),
     );
     if (!result) return;
-    host.refreshSources();
+    await notifyRediscovery(transport, host, result.imported > 0);
     const summary = [result.imported ? `${result.imported} completed` : "", result.errors.length ? `${result.errors.length} failed` : ""]
       .filter(Boolean)
       .join(", ");

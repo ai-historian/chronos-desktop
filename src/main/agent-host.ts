@@ -77,6 +77,8 @@ export class AgentHost {
   // Cached for onStateChange subscribers (e.g. the app menu).
   private models: ModelInfo[] = [];
   private lastState: RpcSessionState | undefined;
+  /** Last `collection` message from the agent; undefined until the agent announces one. */
+  private activeCollection: { id: string | null; name: string | null; dataDir: string } | undefined;
   private stateListeners = new Set<(s: AgentHostState) => void>();
 
   // Viewer state so navigation and [view p.N] links without an explicit
@@ -236,6 +238,8 @@ export class AgentHost {
         this.postSessions();
         // The turn may have written new extraction files — refresh the Data tab.
         this.postDataFiles();
+        // The agent may have added sources (change_source) — refresh the picker.
+        this.postSources();
       }
       this.post({ type: "agentEvent", event });
     });
@@ -421,8 +425,37 @@ export class AgentHost {
           sourceName: msg.sourceName,
         });
         break;
+      case "collection":
+        this.activeCollection = { id: msg.id, name: msg.name, dataDir: msg.dataDir };
+        break;
       // text_delta/tool_start/tool_end/turn_end are RPC-event duplicates — dropped
     }
+  }
+
+  /** Port of the HTTP push server the agent POSTs viewer events to (0 until start()). */
+  get httpPort(): number {
+    return this.httpServer.port;
+  }
+
+  /** Display name of the agent's active collection, or null for "all sources" / unknown. */
+  get activeCollectionName(): string | null {
+    return this.activeCollection?.name ?? null;
+  }
+
+  /**
+   * Make the agent re-scan `sources/` (its catalogue is built on session start,
+   * so a source imported mid-session is unknown to it until then). Re-selecting
+   * the auto "all sources" collection rebuilds the catalogue; a named collection
+   * is left alone because an imported source is not part of it anyway. Always
+   * refreshes the header picker.
+   */
+  async rediscoverSources(): Promise<"rebuilt" | "busy" | "named-collection" | "not-running"> {
+    this.postSources();
+    if (!this.rpc?.isRunning) return "not-running";
+    if (this.isStreaming) return "busy";
+    if (this.activeCollection && this.activeCollection.id !== null) return "named-collection";
+    await this.rpc.request({ type: "prompt", message: `/select-collection (all sources)` }, 0);
+    return "rebuilt";
   }
 
   showPage(sourceDir: string, sourceName: string, pageId: number, bbox: Bbox | null, totalPages?: number): void {

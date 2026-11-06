@@ -29,6 +29,14 @@ export interface ShowTextMessage {
   sourceName: string;
 }
 
+/** The agent's active collection (id null = the auto "all sources" collection). */
+export interface CollectionMessage {
+  type: "collection";
+  id: string | null;
+  name: string | null;
+  dataDir: string;
+}
+
 export interface ErrorMessage {
   type: "error";
   message: string;
@@ -38,6 +46,7 @@ export type AgentToExtensionMessage =
   | ShowPageMessage
   | PageListMessage
   | ShowTextMessage
+  | CollectionMessage
   | ErrorMessage;
 
 // Extension → Agent messages

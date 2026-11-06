@@ -185,3 +185,29 @@ test("workspace/import routes to onImport", async () => {
   await host.handleWebviewMessage({ type: "workspace/import" });
   assert.equal(imports, 1);
 });
+
+async function postHttp(port: number, msg: unknown): Promise<void> {
+  const res = await fetch(`http://127.0.0.1:${port}/message`, { method: "POST", body: JSON.stringify(msg) });
+  if (!res.ok) throw new Error(`POST failed: ${res.status}`);
+  await res.text();
+}
+
+test("collection message is stored and rediscoverSources re-selects all sources", async () => {
+  const ws = makeWorkspace();
+  const { host, posted } = makeHost(ws);
+  try {
+    await host.start();
+    await waitFor(() => posted.some((m) => m.type === "models") || undefined);
+    posted.length = 0;
+    await postHttp(host.httpPort, { type: "collection", id: null, name: null, dataDir: ws });
+    await waitFor(() => host.activeCollectionName === null || undefined);
+    assert.equal(await host.rediscoverSources(), "rebuilt");
+    assert.ok(posted.some((m) => m.type === "sources"), "picker refreshed");
+    await postHttp(host.httpPort, { type: "collection", id: "parish", name: "Parish books", dataDir: ws });
+    await waitFor(() => (host.activeCollectionName === "Parish books" ? true : undefined));
+    assert.equal(await host.rediscoverSources(), "named-collection");
+  } finally {
+    await host.stop();
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
