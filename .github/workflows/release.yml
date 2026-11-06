@@ -6,8 +6,9 @@ name: release
 #   -> each `installers` leg builds its OS/arch and uploads into that draft
 #      (electron-builder publish: tagNamePrefix "v", releaseType draft)
 #   -> publish the draft manually once all artefacts are attached.
-# A workflow_dispatch run (no tag) builds every installer with --publish never
-# (artefacts stay on the runners; nothing is released).
+# A workflow_dispatch run (no tag) builds every installer with --publish never and
+# uploads them as workflow artifacts (Actions tab -> the run -> Artifacts), so test
+# builds for every OS can be downloaded without tagging a release.
 on:
   push:
     tags: ["v*"]
@@ -98,3 +99,16 @@ jobs:
         run: npx electron-builder ${{ matrix.args }} --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Manual runs: keep the installers as downloadable artifacts (90-day retention).
+      - name: Upload installers as artifacts
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: chronos-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.dmg
+            dist/*.exe
+          if-no-files-found: error
