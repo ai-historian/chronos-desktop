@@ -1,4 +1,4 @@
-@earendil-works/pi-coding-agent 0.84.4 — MIT per package.json; upstream: https://github.com/earendil-works/pi
+@earendil-works/pi-coding-agent 1.5.0 — MIT per package.json; upstream: https://github.com/earendil-works/pi
 
 MIT License
 

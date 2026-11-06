@@ -84,15 +84,20 @@ if (existsSync(piLicense)) {
 
 const agentModules = join(agentDest, "node_modules");
 copyLicense(join(agentModules, "sharp", "LICENSE"), "sharp");
-const libvips = readdirSync(join(agentModules, "@img")).find((d) => d.startsWith("sharp-libvips-"));
-if (!libvips) throw new Error("no @img/sharp-libvips-* prebuild in vendored agent");
-// The libvips prebuilds (LGPL-3.0-or-later) ship no LICENSE file. The full
-// LGPL-3.0 and GPL-3.0 texts are committed statically in resources/licenses/;
-// the prebuild's README licence table is kept as a supplementary notice.
+// libvips (LGPL-3.0-or-later) comes as a separate @img/sharp-libvips-<platform>
+// prebuild on Linux/macOS, while on Windows the DLLs ship inside
+// @img/sharp-win32-<arch> itself (licensed "Apache-2.0 AND LGPL-3.0-or-later").
+const imgPkgs = readdirSync(join(agentModules, "@img"));
+const libvips = imgPkgs.find((d) => d.startsWith("sharp-libvips-")) ?? imgPkgs.find((d) => d.startsWith("sharp-win32-"));
+if (!libvips) throw new Error(`no @img/sharp-libvips-* or @img/sharp-win32-* prebuild in vendored agent (found: ${imgPkgs.join(", ") || "none"})`);
+// The prebuilds ship no LGPL text. The full LGPL-3.0 and GPL-3.0 texts are
+// committed statically in resources/licenses/; the prebuild's README licence
+// table (and its LICENSE file, when present) are kept as supplementary notices.
 for (const name of ["LGPL-3.0.txt", "GPL-3.0.txt"]) {
   if (!existsSync(join(licensesDir, name))) throw new Error(`missing static licence text: resources/licenses/${name}`);
 }
 copyLicense(join(agentModules, "@img", libvips, "README.md"), "sharp-libvips-NOTICE");
+if (existsSync(join(agentModules, "@img", libvips, "LICENSE"))) copyLicense(join(agentModules, "@img", libvips, "LICENSE"), "sharp-prebuild-LICENSE");
 copyLicense(join(appRoot, "node_modules", "mupdf", "LICENSE"), "mupdf");
 console.log(`licences -> ${licensesDir}`);
 

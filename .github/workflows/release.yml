@@ -13,6 +13,12 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      only:
+        description: "Build only this platform (manual runs)"
+        type: choice
+        default: all
+        options: [all, linux, windows, mac-arm64, mac-x64]
 
 permissions:
   contents: write
@@ -55,11 +61,13 @@ jobs:
       # label is retired.
       matrix:
         include:
-          - { os: ubuntu-latest, args: "--linux" }
-          - { os: windows-latest, args: "--win" }
-          - { os: macos-latest, args: "--mac --arm64" }
-          - { os: macos-15-intel, args: "--mac --x64" }
+          - { key: linux, os: ubuntu-latest, args: "--linux" }
+          - { key: windows, os: windows-latest, args: "--win" }
+          - { key: mac-arm64, os: macos-latest, args: "--mac --arm64" }
+          - { key: mac-x64, os: macos-15-intel, args: "--mac --x64" }
     runs-on: ${{ matrix.os }}
+    # Tag runs always build every platform; a manual run can pick one leg.
+    if: github.ref_type == 'tag' || inputs.only == '' || inputs.only == 'all' || inputs.only == matrix.key
     env:
       # Pin the download caches to one path on every OS so actions/cache can restore them.
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
