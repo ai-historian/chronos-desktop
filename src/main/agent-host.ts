@@ -6,7 +6,8 @@ import type { AgentToExtensionMessage } from "./protocol";
 import type { Bbox, ExtToWebview, WebviewToExt } from "../shared/webview-protocol";
 import { HttpServer } from "./http-server";
 import { appendAppLog } from "./app-log";
-import { discoverSources, countPages } from "./sources";
+import { discoverSources, countPages, discoverCollections } from "./sources";
+import { deriveDataKeyFallback } from "./data-key";
 import { listSessions, readSessionMessages } from "./sessions";
 import { readChronosSettings, writeChronosSettings, suggestPrefix, commandMatchesPrefix } from "./chronos-settings";
 import type { PiLaunch } from "./pi-launcher";
@@ -77,7 +78,11 @@ export class AgentHost {
   // Cached for onStateChange subscribers (e.g. the app menu).
   private models: ModelInfo[] = [];
   private lastState: RpcSessionState | undefined;
-  /** Last `collection` message from the agent; undefined until the agent announces one. */
+  /** Last `collection` message from the agent; undefined until the agent announces
+   *  one (then its id, null = the auto "all sources" collection, drives the picker,
+   *  and its dataDir — data/_collections/<key>/ — is merged into the Data tab so
+   *  collection-level files such as the entity index are surfaced alongside
+   *  source data). */
   private activeCollection: { id: string | null; name: string | null; dataDir: string } | undefined;
   private stateListeners = new Set<(s: AgentHostState) => void>();
 
@@ -85,11 +90,33 @@ export class AgentHost {
   // source resolve against the current source.
   private currentSourceDir: string | undefined;
   private currentSourceName: string | undefined;
+
+  // The agent owns the data-dir key: flat sources use basename(path), nested
+  // refs are slugged (city/X -> city--X). The cache of what the agent has
+  // already told us wins when present (cheapest, and exactly what the agent
+  // is using); `deriveDataKeyFallback` (./data-key.ts) covers a cold cache —
+  // e.g. resuming a session and citing a nested source the agent hasn't sent
+  // a viewer message about yet this run — by mirroring the agent's own
+  // derivation instead of a bare `basename`, which is wrong for nested
+  // sources (see data-key.ts for why the duplication is unavoidable).
+  private dataKeyBySourceDir = new Map<string, string>();
+
+  private rememberDataKey(sourceDir: string, dataKey: string): void {
+    if (sourceDir && dataKey) this.dataKeyBySourceDir.set(sourceDir, dataKey);
+  }
+
+  private dataKeyForSourceDir(sourceDir: string): string {
+    return this.dataKeyBySourceDir.get(sourceDir) ?? deriveDataKeyFallback(this.workspaceDir, sourceDir);
+  }
+
   private firstPage = 1;
   private lastPage = 1;
   // Last source we pushed a data-file list for, so navigation within a source
   // doesn't re-list on every page change.
   private lastDataSource: string | undefined;
+  // filename → directory it was listed from, so a data/load reads the right dir
+  // when the list merges per-source and collection-level files.
+  private dataFileDirs = new Map<string, string>();
 
   // Blocking extension_ui_requests forwarded to the webview; answered with
   // cancelled on stop so the agent never deadlocks.
@@ -130,6 +157,7 @@ export class AgentHost {
    *  adds a new source) so the header picker reflects it without a reload. */
   refreshSources(): void {
     this.postSources();
+    this.postCollections();
   }
 
   onStateChange(cb: (s: AgentHostState) => void): () => void {
@@ -287,6 +315,10 @@ export class AgentHost {
         // Re-arm the Data-tab refresh guard so re-selecting the same source
         // (or restoring it on resume) repopulates the (now-cleared) Data tab.
         this.lastDataSource = undefined;
+        // New session starts on the auto collection; the agent re-emits the
+        // active collection on its session_start, which corrects this if needed.
+        this.activeCollection = undefined;
+        this.postCollections();
         this.post({ type: "history", messages: [] });
         // The new session has no source bound — clear the viewer + dropdown so
         // the display matches (don't leave the previous source showing).
@@ -315,6 +347,7 @@ export class AgentHost {
     this.post({ type: "state", state });
     this.post({ type: "yolo", enabled: readChronosSettings(this.workspaceDir).yolo === true });
     this.postSources();
+    this.postCollections();
     this.postSessions();
     void this.postHistory(state);
     void this.rpc
@@ -382,7 +415,17 @@ export class AgentHost {
     const sources = existsSync(sourcesDir) ? discoverSources(sourcesDir) : [];
     this.post({
       type: "sources",
-      sources: sources.map((s) => ({ name: s.name, pageCount: countPages(s.path) })),
+      // dataKey lets the webview match the dropdown option against currentSource
+      // (also a data key) without re-deriving it — see dataKeyForSourceDir above.
+      sources: sources.map((s) => ({ name: s.name, pageCount: countPages(s.path), dataKey: this.dataKeyForSourceDir(s.path) })),
+    });
+  }
+
+  private postCollections(): void {
+    this.post({
+      type: "collections",
+      collections: discoverCollections(this.workspaceDir),
+      active: this.activeCollection?.id ?? null,
     });
   }
 
@@ -408,14 +451,19 @@ export class AgentHost {
   handleHttpMessage(msg: AgentToExtensionMessage): void {
     switch (msg.type) {
       case "show_page":
+        this.rememberDataKey(msg.sourceDir, msg.sourceName);
         this.showPage(msg.sourceDir, msg.sourceName, msg.pageId, msg.bbox, msg.totalPages);
         break;
       case "page_list":
+        this.rememberDataKey(msg.sourceDir, msg.sourceName);
         this.firstPage = msg.firstPage;
         this.lastPage = msg.lastPage;
         this.post({ type: "viewer/updateRange", firstPage: msg.firstPage, lastPage: msg.lastPage });
         break;
       case "show_text":
+        // ShowTextMessage carries only sourceName, not sourceDir (see http-client.ts)
+        // — nothing to key the cache on here; currentSourceName is already correct
+        // as sent, so this is a no-op w.r.t. the bug this cache fixes.
         this.currentSourceName = msg.sourceName;
         this.post({
           type: "viewer/showText",
@@ -427,6 +475,9 @@ export class AgentHost {
         break;
       case "collection":
         this.activeCollection = { id: msg.id, name: msg.name, dataDir: msg.dataDir };
+        this.postCollections();
+        // The collection's entity index etc. may now be visible — refresh the tab.
+        this.postDataFiles();
         break;
       // text_delta/tool_start/tool_end/turn_end are RPC-event duplicates — dropped
     }
@@ -442,15 +493,20 @@ export class AgentHost {
     return this.activeCollection?.name ?? null;
   }
 
+  /** The active collection's id (null = "all sources" or none announced yet). */
+  get activeCollectionId(): string | null {
+    return this.activeCollection?.id ?? null;
+  }
+
   /**
    * Make the agent re-scan `sources/` (its catalogue is built on session start,
    * so a source imported mid-session is unknown to it until then). Re-selecting
    * the auto "all sources" collection rebuilds the catalogue; a named collection
    * is left alone because an imported source is not part of it anyway. Always
-   * refreshes the header picker.
+   * refreshes the header pickers (a manifest may have been imported too).
    */
   async rediscoverSources(): Promise<"rebuilt" | "busy" | "named-collection" | "not-running"> {
-    this.postSources();
+    this.refreshSources();
     if (!this.rpc?.isRunning) return "not-running";
     if (this.isStreaming) return "busy";
     if (this.activeCollection && this.activeCollection.id !== null) return "named-collection";
@@ -494,6 +550,19 @@ export class AgentHost {
     return this.opts.imageUri(pagePath);
   }
 
+  // A cited source (from a [view …@path] link or a data row's chronos_source) to
+  // its absolute dir. Accepts an absolute path, a workspace-relative path
+  // (sources/Frankfurt_1864), or a bare ref (Frankfurt_1864) — trying the
+  // sources/ tree as a fallback so entity-index citations resolve either way.
+  private resolveCitedSource(sourcePath: string): string {
+    if (isAbsolute(sourcePath)) return sourcePath;
+    const direct = join(this.workspaceDir, sourcePath);
+    if (existsSync(join(direct, "png"))) return direct;
+    const underSources = join(this.workspaceDir, "sources", sourcePath);
+    if (existsSync(join(underSources, "png"))) return underSources;
+    return direct;
+  }
+
   // Resolve a cited page's image for the Data tab's inline crop preview, WITHOUT
   // touching the page viewer or current source — the data and source viewers are
   // independent; only "Show full page" (openViewLink) crosses over.
@@ -501,8 +570,8 @@ export class AgentHost {
     let sourceDir = this.currentSourceDir;
     let sourceName = this.currentSourceName;
     if (sourcePath) {
-      sourceDir = isAbsolute(sourcePath) ? sourcePath : join(this.workspaceDir, sourcePath);
-      sourceName = basename(sourceDir);
+      sourceDir = this.resolveCitedSource(sourcePath);
+      sourceName = this.dataKeyForSourceDir(sourceDir);
     }
     if (!sourceDir) return;
     this.post({
@@ -518,8 +587,8 @@ export class AgentHost {
     let sourceDir = this.currentSourceDir;
     let sourceName = this.currentSourceName;
     if (sourcePath) {
-      sourceDir = isAbsolute(sourcePath) ? sourcePath : join(this.workspaceDir, sourcePath);
-      sourceName = basename(sourceDir);
+      sourceDir = this.resolveCitedSource(sourcePath);
+      sourceName = this.dataKeyForSourceDir(sourceDir);
     }
     if (!sourceDir || !sourceName) return;
     const totalPages = sourceDir === this.currentSourceDir ? undefined : countPages(sourceDir);
@@ -550,25 +619,40 @@ export class AgentHost {
   }
 
   // ── dataset viewer ─────────────────────────────────────────────────────────
-  // The agent writes extraction outputs to data/<sourceName>/ (sourceName is the
-  // source dir basename, matching change_source / select-source). We surface
-  // those files in the Data tab; row provenance reuses openViewLink.
+  // The agent writes extraction outputs to data/<dataKey>/ and sends that dataKey
+  // as the viewer event's `sourceName` (basename for flat sources, a slug for
+  // nested ones), so data/<sourceName> here always matches the agent's output dir.
+  // We surface those files in the Data tab; row provenance reuses openViewLink.
 
   private dataDir(): string | undefined {
     return this.currentSourceName ? join(this.workspaceDir, "data", this.currentSourceName) : undefined;
   }
 
-  private listDataFiles(): string[] {
-    const dir = this.dataDir();
-    if (!dir) return [];
+  private filesIn(dir: string): string[] {
     try {
       return readdirSync(dir, { withFileTypes: true })
         .filter((e) => e.isFile() && !e.name.startsWith("."))
-        .map((e) => e.name)
-        .sort((a, b) => a.localeCompare(b));
+        .map((e) => e.name);
     } catch {
       return [];
     }
+  }
+
+  // The active source's files plus, when a collection is active, its
+  // collection-level files (entity index, cross-source summaries). Records each
+  // file's directory so data/load reads it back from the right place; the source
+  // dir wins on a name clash.
+  private listDataFiles(): string[] {
+    this.dataFileDirs.clear();
+    const collectionDir = this.activeCollection?.dataDir;
+    if (collectionDir) {
+      for (const name of this.filesIn(collectionDir)) this.dataFileDirs.set(name, collectionDir);
+    }
+    const sourceDir = this.dataDir();
+    if (sourceDir) {
+      for (const name of this.filesIn(sourceDir)) this.dataFileDirs.set(name, sourceDir);
+    }
+    return [...this.dataFileDirs.keys()].sort((a, b) => a.localeCompare(b));
   }
 
   private postDataFiles(): void {
@@ -577,9 +661,10 @@ export class AgentHost {
   }
 
   private postDataFile(filename: string): void {
-    const dir = this.dataDir();
     // filenames come from listDataFiles (basenames); reject anything path-like.
-    if (!dir || filename.includes("/") || filename.includes("\\") || filename.includes("..")) return;
+    if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) return;
+    const dir = this.dataFileDirs.get(filename) ?? this.dataDir();
+    if (!dir) return;
     try {
       const content = readFileSync(join(dir, filename), "utf-8");
       this.post({ type: "data/show", sourceName: this.currentSourceName ?? "", filename, content });
@@ -675,11 +760,18 @@ export class AgentHost {
           // (which arrives back here as an extension_ui_request).
           await this.rpc?.request({ type: "prompt", message: `/select-source ${msg.name}` }, 0);
           break;
+        case "selectCollection": {
+          // null → the auto "all sources" collection. "(all sources)" is the exact
+          // sentinel the pi-package's /select-collection maps back to null.
+          const arg = msg.id ?? "(all sources)";
+          await this.rpc?.request({ type: "prompt", message: `/select-collection ${arg}` }, 0);
+          break;
+        }
         case "refreshSessions":
           this.postSessions();
           break;
         case "refreshSources":
-          this.postSources();
+          this.refreshSources();
           break;
         case "workspace/import":
           this.opts.onImport?.();

@@ -20,6 +20,11 @@ function makeWorkspace(): string {
   return dir;
 }
 
+function writeCollection(ws: string, id: string, manifest: Record<string, unknown>): void {
+  mkdirSync(join(ws, "collections"), { recursive: true });
+  writeFileSync(join(ws, "collections", `${id}.json`), JSON.stringify(manifest));
+}
+
 function makeHost(workspaceDir: string) {
   const posted: ExtToWebview[] = [];
   const host = new AgentHost({
@@ -56,7 +61,12 @@ test("start seeds webview with state, models, commands, sources, sessions", asyn
     // state comes first, before the async model/command replies
     assert.equal(posted[0].type, "state");
     const sources = posted.find((m) => m.type === "sources");
-    assert.deepEqual(sources && sources.type === "sources" && sources.sources, [{ name: "TestSource", pageCount: 1 }]);
+    assert.deepEqual(sources && sources.type === "sources" && sources.sources, [
+      { name: "TestSource", pageCount: 1, dataKey: "TestSource" },
+    ]);
+    // No collections/ dir yet → an empty catalogue on the auto collection.
+    const collections = posted.find((m) => m.type === "collections");
+    assert.deepEqual(collections, { type: "collections", collections: [], active: null });
     const login = posted.find((m) => m.type === "loginRequired");
     assert.equal(login && login.type === "loginRequired" && login.required, false);
   } finally {
@@ -206,6 +216,112 @@ test("collection message is stored and rediscoverSources re-selects all sources"
     await postHttp(host.httpPort, { type: "collection", id: "parish", name: "Parish books", dataDir: ws });
     await waitFor(() => (host.activeCollectionName === "Parish books" ? true : undefined));
     assert.equal(await host.rediscoverSources(), "named-collection");
+  } finally {
+    await host.stop();
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test("collections message lists manifests from collections/ with the active id", async () => {
+  const ws = makeWorkspace();
+  writeCollection(ws, "parish", { name: "Parish books", description: "Baptisms", members: [{ path: "TestSource" }] });
+  writeFileSync(join(ws, "collections", "zz-broken.json"), "{ nope");
+  writeCollection(ws, "bare", { members: [] });
+  const { host, posted } = makeHost(ws);
+  try {
+    await host.start();
+    const msg = await waitFor(() => {
+      const m = posted.find((x) => x.type === "collections");
+      return m && m.type === "collections" ? m : undefined;
+    });
+    // Sorted by display name; an unparseable manifest is skipped; name falls back to the id.
+    assert.deepEqual(msg.collections, [
+      { id: "parish", name: "Parish books", description: "Baptisms", memberCount: 1 },
+      { id: "bare", name: "bare", description: undefined, memberCount: 0 },
+    ].sort((a, b) => a.name.localeCompare(b.name)));
+    assert.equal(msg.active, null);
+
+    // The agent announcing a collection over HTTP re-posts the picker state.
+    posted.length = 0;
+    await postHttp(host.httpPort, { type: "collection", id: "parish", name: "Parish books", dataDir: join(ws, "data", "_collections", "parish") });
+    const after = await waitFor(() => {
+      const m = posted.find((x) => x.type === "collections");
+      return m && m.type === "collections" ? m : undefined;
+    });
+    assert.equal(after.active, "parish");
+    assert.equal(host.activeCollectionId, "parish");
+
+    // A new session falls back to the auto collection until the agent says otherwise.
+    posted.length = 0;
+    await host.newSession();
+    const reset = posted.find((x) => x.type === "collections");
+    assert.ok(reset && reset.type === "collections" && reset.active === null);
+    assert.equal(host.activeCollectionId, null);
+  } finally {
+    await host.stop();
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test("selectCollection prompts /select-collection with the id or the all-sources sentinel", async () => {
+  const ws = makeWorkspace();
+  writeCollection(ws, "parish", { name: "Parish books", members: [{ path: "TestSource" }] });
+  const { host, posted } = makeHost(ws);
+  try {
+    await host.start();
+    await host.handleWebviewMessage({ type: "selectCollection", id: "parish" });
+    // mock-pi answers the command by announcing the collection over HTTP.
+    await waitFor(() => (host.activeCollectionId === "parish" ? true : undefined));
+    const picked = posted.filter((m) => m.type === "collections").pop();
+    assert.ok(picked && picked.type === "collections" && picked.active === "parish");
+
+    await host.handleWebviewMessage({ type: "selectCollection", id: null });
+    await waitFor(() => (host.activeCollectionId === null ? true : undefined));
+    assert.equal(host.activeCollectionName, null);
+  } finally {
+    await host.stop();
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test("Data tab merges the active collection's files with the source's (source wins on a clash)", async () => {
+  const ws = makeWorkspace();
+  mkdirSync(join(ws, "data", "TestSource"), { recursive: true });
+  writeFileSync(join(ws, "data", "TestSource", "rows.csv"), "from-source");
+  writeFileSync(join(ws, "data", "TestSource", "shared.md"), "source copy");
+  const collDir = join(ws, "data", "_collections", "parish");
+  mkdirSync(collDir, { recursive: true });
+  writeFileSync(join(collDir, "entities.csv"), "from-collection");
+  writeFileSync(join(collDir, "shared.md"), "collection copy");
+  const { host, posted } = makeHost(ws);
+  try {
+    await host.start();
+    // Bind the source (show_page over HTTP), then activate the collection.
+    await host.handleWebviewMessage({ type: "prompt", text: "select: TestSource" });
+    await waitFor(() => posted.find((m) => m.type === "viewer/showPage"));
+    posted.length = 0;
+    await postHttp(host.httpPort, { type: "collection", id: "parish", name: "Parish books", dataDir: collDir });
+    const list = await waitFor(() => {
+      const m = posted.find((x) => x.type === "data/list");
+      return m && m.type === "data/list" ? m : undefined;
+    });
+    assert.equal(list.sourceName, "TestSource");
+    assert.deepEqual(list.files, ["entities.csv", "rows.csv", "shared.md"]);
+
+    posted.length = 0;
+    await host.handleWebviewMessage({ type: "data/load", filename: "entities.csv" });
+    await host.handleWebviewMessage({ type: "data/load", filename: "shared.md" });
+    const shown = posted.filter((m) => m.type === "data/show").map((m) => m.type === "data/show" && m.content);
+    assert.deepEqual(shown, ["from-collection", "source copy"]);
+
+    // Back on the auto collection, only the source's files are listed.
+    posted.length = 0;
+    await postHttp(host.httpPort, { type: "collection", id: null, name: null, dataDir: join(ws, "data") });
+    const again = await waitFor(() => {
+      const m = posted.find((x) => x.type === "data/list");
+      return m && m.type === "data/list" ? m : undefined;
+    });
+    assert.deepEqual(again.files, ["rows.csv", "shared.md"]);
   } finally {
     await host.stop();
     rmSync(ws, { recursive: true, force: true });

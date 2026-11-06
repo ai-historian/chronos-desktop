@@ -11,6 +11,11 @@
 //   "ask: …"     → emit a blocking extension_ui_request (select) and wait for
 //                  the extension_ui_response before replying "picked: <value>".
 //                  A cancelled response is logged to stderr ("ui-cancelled <id>").
+//   "/select-collection <id>"
+//                → like the chronos agent's command: POST a `collection`
+//                  message over HTTP ("(all sources)" → id null, otherwise the
+//                  id with dataDir data/_collections/<id>) and answer the prompt
+//                  with disposition "handled" (no run starts).
 //   anything     → emit assistant text "echo: <message>".
 import { createInterface } from "node:readline";
 import { request } from "node:http";
@@ -132,6 +137,14 @@ let uiSeq = 0;
 
 function handlePrompt(message) {
   const m = (message || "").trim();
+  if (m.startsWith("/select-collection ")) {
+    const arg = m.slice("/select-collection ".length).trim();
+    const id = arg === "(all sources)" ? null : arg;
+    // Same shape as the agent's emitActiveCollection (collectionKey: id ?? "all-sources").
+    httpPost({ type: "collection", id, name: id, dataDir: join(process.cwd(), "data", "_collections", id ?? "all-sources") });
+    return;
+  }
+  if (m.startsWith("/")) return; // other slash commands: handled, nothing to emit
   if (m.startsWith("ask:")) {
     const uiId = `ui-${++uiSeq}`;
     pendingUi.set(uiId, (resp) => emitAssistant(resp.cancelled ? "cancelled" : `picked: ${resp.value}`));
