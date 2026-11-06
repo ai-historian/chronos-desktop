@@ -48,6 +48,10 @@ export interface AgentHostOptions {
   };
   /** Import sources (renderer `workspace/import`), supplied by the Electron shell. */
   onImport?: () => void;
+  /** Called once per seed with the auth'd models and the session's current model. */
+  onModelsKnown?: (models: ModelInfo[], current: { provider: string; id: string } | undefined) => void;
+  /** Called after the user (or a menu action) switched the model successfully. */
+  onModelChosen?: (model: { provider: string; id: string }) => void;
 }
 
 // pi auto-registers every .md in a package's prompts/ dir as a slash command,
@@ -318,6 +322,8 @@ export class AgentHost {
         // No models means no provider is authenticated — surface the login CTA.
         this.post({ type: "loginRequired", required: models.length === 0 });
         this.emitStateChange();
+        const cur = this.lastState?.model;
+        this.opts.onModelsKnown?.(models, cur ? { provider: cur.provider, id: cur.id } : undefined);
       })
       .catch(() => {
         // The agent already started (rpc.start resolved), so a transient
@@ -620,6 +626,7 @@ export class AgentHost {
         }
         case "setModel": {
           await this.rpc?.request({ type: "set_model", provider: msg.provider, modelId: msg.modelId });
+          this.opts.onModelChosen?.({ provider: msg.provider, id: msg.modelId });
           await this.refreshState();
           this.emitStateChange();
           break;

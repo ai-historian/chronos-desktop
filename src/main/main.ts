@@ -12,6 +12,7 @@ import { providerChoices, saveApiKey, startAnthropicOauth, submitAnthropicOauthC
 import { RecentStore, ensureWorkspace, pickFolderToCreate, pickWorkspaceToOpen } from "./workspace";
 import { appLogPath, installAppLog } from "./app-log";
 import { buildMenu, type MenuActions, type MenuState } from "./menu";
+import { ensurePiDefaultModel, rememberModelChoice } from "./pi-settings";
 import { readAppSettings, writeAppSettings } from "./app-settings";
 import {
   findIncompleteImports,
@@ -216,7 +217,17 @@ function createMainWindow(workspaceDir: string): BrowserWindow {
   };
   ipcMain.on("chronos:msg", onMsg);
 
+  const piAgentDir = join(app.getPath("userData"), "pi-agent");
   host = new AgentHost({
+    // Standard model: seed pi's default once (Opus 5.5 first, see pi-settings.ts)
+    // and switch the fresh session to it; remember whatever the user picks later.
+    onModelsKnown: (models, current) => {
+      const seeded = ensurePiDefaultModel(piAgentDir, models);
+      if (seeded && !(current && current.provider === seeded.provider && current.id === seeded.id)) {
+        void host?.handleWebviewMessage({ type: "setModel", provider: seeded.provider, modelId: seeded.id });
+      }
+    },
+    onModelChosen: (m) => rememberModelChoice(piAgentDir, m),
     workspaceDir,
     transport,
     launch: (port) =>

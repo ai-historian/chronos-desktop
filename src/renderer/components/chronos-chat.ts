@@ -537,7 +537,7 @@ export class ChronosChat extends LitElement {
           content: [{ type: "text", text: "Found 3 entries.\ntask_id: task-1" }],
           details: {
             taskId: "task-1",
-            model: "anthropic/claude-opus-4-8",
+            model: "anthropic/claude-opus-5-5",
             toolUses: [
               { tool: "view_region", pageId: 42, bbox: { x: 0.1, y: 0.3, w: 0.8, h: 0.1 }, isError: false },
               { tool: "view_page", pageId: 43, isError: false },
