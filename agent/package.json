@@ -1,0 +1,32 @@
+{
+  "name": "chronos",
+  "version": "0.2.3",
+  "description": "AI economic historian agent for digitizing historical German city directories",
+  "type": "module",
+  "license": "LicenseRef-PolyForm-Noncommercial-1.0.0",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./dist/extensions"],
+    "skills": ["./skills"],
+    "prompts": ["./prompts"]
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node scripts/downscale-canary.mjs && node scripts/retry-canary.mjs && node scripts/timeout-canary.mjs && node scripts/collection-canary.mjs"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34",
+    "dotenv": "^16.4.0",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/sharp": "^0.31.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
