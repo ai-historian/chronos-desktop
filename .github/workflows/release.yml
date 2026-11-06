@@ -120,10 +120,23 @@ jobs:
         run: npm run build
 
       # Tag runs upload into the draft release; workflow_dispatch runs only build.
+      # Signing is driven entirely by repository secrets (electron-builder reads these env
+      # vars): with CSC_LINK/CSC_KEY_PASSWORD set the build is signed with that
+      # certificate (Developer ID Application on macOS, a code-signing cert on Windows);
+      # with APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID also set, the macOS build
+      # is notarized too. Without them macOS builds are ad-hoc signed (scripts/adhoc-sign.cjs).
       - name: Package (and publish on tags)
-        run: npx electron-builder ${{ matrix.args }} --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
+        run: >
+          npx electron-builder ${{ matrix.args }}
+          --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
+          ${{ secrets.APPLE_ID != '' && '--config.mac.notarize=true' || '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       # Manual runs: keep the installers as downloadable artifacts (90-day retention).
       - name: Upload installers as artifacts

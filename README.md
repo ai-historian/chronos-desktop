@@ -119,8 +119,23 @@ no target-platform switch yet.
 ad-hoc signed by `scripts/adhoc-sign.cjs`. The app runs, but on first launch macOS blocks
 it as from an unidentified developer: open System Settings → Privacy & Security, scroll
 down and click **Open Anyway** next to Chronos, then launch it again (once per machine).
-To ship properly signed and notarized builds, add the certificate as the `CSC_LINK` /
-`CSC_KEY_PASSWORD` repository secrets; electron-builder then signs instead of the hook.
+To ship properly signed and notarized builds (no prompts for users, the industry norm
+for apps outside the App Store), join the Apple Developer Program and add five
+repository secrets; the workflow does the rest:
+
+| Secret | Value |
+|---|---|
+| `CSC_LINK` | the Developer ID Application certificate exported from Keychain Access as `.p12`, base64-encoded |
+| `CSC_KEY_PASSWORD` | the password chosen when exporting the `.p12` |
+| `APPLE_ID` | the Apple ID of the developer account |
+| `APPLE_APP_SPECIFIC_PASSWORD` | an app-specific password for that Apple ID (appleid.apple.com → Sign-In and Security) |
+| `APPLE_TEAM_ID` | the 10-character Team ID shown in the developer account |
+
+With `CSC_LINK` present electron-builder signs instead of the ad-hoc hook; with
+`APPLE_ID` present the workflow also notarizes and staples. A Windows code-signing
+certificate goes into the same `CSC_LINK`/`CSC_KEY_PASSWORD` pair on the Windows leg
+(use environment-specific secrets if the two differ), which removes the SmartScreen
+warning there. See electron-builder's code-signing docs for the details.
 
 **Releasing** (`.github/workflows/release.yml`):
 

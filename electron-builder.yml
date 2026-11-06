@@ -57,6 +57,8 @@ mac:
   artifactName: "${productName}-${version}-${arch}.${ext}"
   category: public.app-category.productivity
   hardenedRuntime: true
+  # Notarization is switched on by the release workflow (--config.mac.notarize=true)
+  # when the APPLE_ID secret exists; a local `npm run dist` never notarizes.
   notarize: false
 
 win:
