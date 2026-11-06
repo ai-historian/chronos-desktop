@@ -27,7 +27,30 @@ jobs:
   release:
     name: Draft release
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
+      # Tag runs build every platform; a manual run may pick one via the "only" input.
+      # (A job-level `if` cannot read the matrix context, so the legs are filtered here.)
+      - name: Plan installer legs
+        id: plan
+        env:
+          ONLY: ${{ inputs.only || 'all' }}
+          IS_TAG: ${{ github.ref_type == 'tag' }}
+        run: |
+          legs='[
+            {"key":"linux","os":"ubuntu-latest","args":"--linux"},
+            {"key":"windows","os":"windows-latest","args":"--win"},
+            {"key":"mac-arm64","os":"macos-latest","args":"--mac --arm64"},
+            {"key":"mac-x64","os":"macos-15-intel","args":"--mac --x64"}
+          ]'
+          if [ "$IS_TAG" = "true" ] || [ "$ONLY" = "all" ]; then
+            matrix=$(echo "$legs" | jq -c .)
+          else
+            matrix=$(echo "$legs" | jq -c --arg k "$ONLY" '[.[] | select(.key == $k)]')
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "legs: $matrix"
       - uses: actions/checkout@v4
         if: github.ref_type == 'tag'
 
@@ -60,14 +83,8 @@ jobs:
       # leg depends on GitHub still offering an Intel runner label — update it when that
       # label is retired.
       matrix:
-        include:
-          - { key: linux, os: ubuntu-latest, args: "--linux" }
-          - { key: windows, os: windows-latest, args: "--win" }
-          - { key: mac-arm64, os: macos-latest, args: "--mac --arm64" }
-          - { key: mac-x64, os: macos-15-intel, args: "--mac --x64" }
+        include: ${{ fromJSON(needs.release.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
-    # Tag runs always build every platform; a manual run can pick one leg.
-    if: github.ref_type == 'tag' || inputs.only == '' || inputs.only == 'all' || inputs.only == matrix.key
     env:
       # Pin the download caches to one path on every OS so actions/cache can restore them.
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
