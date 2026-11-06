@@ -12,7 +12,9 @@ export interface VendorPaths {
 export function resolveVendorPaths(opts: { isPackaged: boolean; resourcesPath: string; appRoot: string }): VendorPaths {
   if (opts.isPackaged) {
     return {
-      piCli: join(opts.resourcesPath, "vendor", "pi", "dist", "bundle", "cli.js"),
+      // vendor/pi is an npm install root (see scripts/bundle-agent.mjs), so pi and all
+      // of its dependencies sit under vendor/pi/node_modules.
+      piCli: join(opts.resourcesPath, "vendor", "pi", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js"),
       agentDir: join(opts.resourcesPath, "vendor", "chronos"),
     };
   }

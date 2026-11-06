@@ -41,16 +41,24 @@ const piPkg = readJson(join(piSrc, "package.json"));
 if (piPkg.version !== piVersion) {
   throw new Error(`installed pi is ${piPkg.version}, package.json piVersion is ${piVersion} — run npm ci`);
 }
+// vendor/pi is a self-contained npm install root: npm hoists most of pi's
+// dependencies (jiti, pi-ai, ...) next to it in the app's node_modules, so copying
+// the pi package folder alone ships an incomplete runtime. Installing the pinned
+// version into its own root puts every dependency under vendor/pi/node_modules,
+// where Node resolution from cli.js finds them.
 const piDest = join(vendor, "pi");
 rmSync(piDest, { recursive: true, force: true });
 mkdirSync(piDest, { recursive: true });
-for (const entry of ["package.json", "dist", "node_modules"]) {
-  cpSync(join(piSrc, entry), join(piDest, entry), { recursive: true, dereference: true });
-}
-// cpSync copies node_modules/.bin's symlinks with absolute targets into this build
-// tree; they would dangle (and leak the build path) in the installed app. pi needs none.
+writeFileSync(
+  join(piDest, "package.json"),
+  JSON.stringify({ name: "chronos-pi-runtime", private: true, dependencies: { "@earendil-works/pi-coding-agent": piVersion } }, null, 2) + "\n",
+);
+run("npm install --omit=dev --no-audit --no-fund", piDest);
+const piVendored = join(piDest, "node_modules", "@earendil-works", "pi-coding-agent");
+if (readJson(join(piVendored, "package.json")).version !== piVersion) throw new Error("vendored pi version mismatch");
+// .bin symlinks are useless in the installed app and may leak build paths.
 rmSync(join(piDest, "node_modules", ".bin"), { recursive: true, force: true });
-console.log(`vendored pi ${piPkg.version} -> ${piDest}`);
+console.log(`vendored pi ${piVersion} -> ${piVendored}`);
 
 // --- chronos agent ------------------------------------------------------
 const agentDest = join(vendor, "chronos");
@@ -73,7 +81,7 @@ const copyLicense = (from, name) => {
 
 // pi's npm tarball ships no LICENSE file; fall back to the MIT text with the
 // copyright holder from its package.json.
-const piLicense = join(piSrc, "LICENSE");
+const piLicense = join(piVendored, "LICENSE");
 if (existsSync(piLicense)) {
   copyLicense(piLicense, "pi-coding-agent");
 } else {

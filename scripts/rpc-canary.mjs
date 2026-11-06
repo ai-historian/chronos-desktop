@@ -34,7 +34,12 @@ writeFileSync(
   ),
 );
 
-const vendor = resolveVendorPaths({ isPackaged: false, resourcesPath: "", appRoot });
+// CHRONOS_CANARY_VENDORED=1 checks the packaged layout instead (vendor/ as built by
+// `npm run bundle-agent`), i.e. the exact files an installer ships.
+const vendor = process.env.CHRONOS_CANARY_VENDORED
+  ? resolveVendorPaths({ isPackaged: true, resourcesPath: appRoot, appRoot })
+  : resolveVendorPaths({ isPackaged: false, resourcesPath: "", appRoot });
+console.log(`canary mode: ${process.env.CHRONOS_CANARY_VENDORED ? "vendored" : "dev"} (${vendor.piCli})`);
 // userDataDir is a temp dir, so PI_CODING_AGENT_DIR never touches ~/.pi.
 const launch = buildPiLaunch({ vendor, workspaceDir: workspace, userDataDir: tmp, httpPort: 1, execPath: process.execPath });
 // Same file/shape login.ts writes (writeAuthStore); expiry far enough out that pi never refreshes it.

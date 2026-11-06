@@ -56,7 +56,7 @@ test("adds workspace skills dir and .env keys when present", () => {
 
 test("resolveVendorPaths packaged vs dev", () => {
   assert.deepEqual(resolveVendorPaths({ isPackaged: true, resourcesPath: "/res", appRoot: "/app" }), {
-    piCli: join("/res", "vendor", "pi", "dist", "bundle", "cli.js"),
+    piCli: join("/res", "vendor", "pi", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js"),
     agentDir: join("/res", "vendor", "chronos"),
   });
   assert.deepEqual(resolveVendorPaths({ isPackaged: false, resourcesPath: "", appRoot: "/repo" }), {
