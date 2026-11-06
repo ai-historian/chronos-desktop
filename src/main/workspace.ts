@@ -11,7 +11,7 @@ function writeIfMissing(filePath: string, content: string): void {
 
 export async function initWorkspace(folder: string): Promise<void> {
   // Create directory structure
-  for (const dir of ["sources", "memory", "skills", "sessions", ".chronos", ".pi"]) {
+  for (const dir of ["sources", "memory", "skills", "sessions", "collections", ".chronos", ".pi"]) {
     mkdirSync(join(folder, dir), { recursive: true });
   }
 
@@ -36,6 +36,7 @@ This folder is a Chronos workspace for digitizing historical documents.
 \`\`\`
 sources/          Place your source directories here (each with a png/ subfolder)
 data/             Per-source extraction results and outputs
+collections/      Named collection manifests (<name>.json grouping member sources)
 memory/           Agent memory files (MEMORY.MD, per-source notes)
 skills/           Skill definitions (markdown task instructions)
 sessions/         Agent session logs (auto-generated)

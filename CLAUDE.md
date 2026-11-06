@@ -83,8 +83,11 @@ versions. Expert models are any `provider/model-id` pi has auth for; none is har
 
 ## Workspace layout (user-facing)
 
-A Chronos workspace contains `sources/<name>/png/page_NNNN.png`, `data/`, `memory/`
-(`MEMORY.MD` + per-source notes, injected into the system prompt), `skills/<name>/SKILL.md`,
+A Chronos workspace contains `sources/<name>/png/page_NNNN.png`, `data/` (per-source
+`data/<dataKey>/` plus `data/_collections/<id>/` for collection-level outputs),
+`collections/<id>.json` (named collection manifests; the header picker lists them and
+`/select-collection <id>` narrows the agent's catalogue), `memory/` (`MEMORY.MD` +
+per-source notes, injected into the system prompt), `skills/<name>/SKILL.md`,
 `sessions/`, and `.chronos/` (`.env` with provider keys written by the login flow,
 `settings.json` for the `yolo` flag, session sidecars).
 

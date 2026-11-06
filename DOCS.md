@@ -10,7 +10,9 @@
 │           ├── page_0001.png
 │           └── ...
 ├── data/                     # Outputs
-│   └── <source-name>/       # Per-source extractions, summaries, JSON
+│   ├── <source-name>/       # Per-source extractions, summaries, JSON
+│   └── _collections/<id>/   # Collection-level outputs (entity index, cross-source summaries)
+├── collections/              # Named collection manifests: <id>.json listing member sources
 ├── skills/                   # Custom task definitions
 │   └── <skill-name>/
 │       └── SKILL.md          # Task instructions
