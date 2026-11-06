@@ -49,6 +49,8 @@ deb:
 # machine that ran bundle-agent, so a universal (or cross-arch) dmg would ship the wrong
 # native binaries. The arch comes from the CLI (--arm64 / --x64) and each dmg is built on
 # a runner of that arch (see .github/workflows/release.yml).
+# Ad-hoc signs macOS builds when no Developer ID identity is configured (see the script).
+afterPack: scripts/adhoc-sign.cjs
 mac:
   target: [dmg]
   # dmg-builder drops the arch from the default name for x64; force it so both dmgs differ.

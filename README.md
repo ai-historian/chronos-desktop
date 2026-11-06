@@ -115,6 +115,13 @@ build. CI builds the arm64 dmg on `macos-latest` and the x64 dmg on `macos-15-in
 x64 leg depends on GitHub still offering an Intel macOS runner label. `bundle-agent` has
 no target-platform switch yet.
 
+**macOS and signing.** Without an Apple Developer certificate the macOS builds are
+ad-hoc signed by `scripts/adhoc-sign.cjs`. The app runs, but on first launch macOS blocks
+it as from an unidentified developer: open System Settings → Privacy & Security, scroll
+down and click **Open Anyway** next to Chronos, then launch it again (once per machine).
+To ship properly signed and notarized builds, add the certificate as the `CSC_LINK` /
+`CSC_KEY_PASSWORD` repository secrets; electron-builder then signs instead of the hook.
+
 **Releasing** (`.github/workflows/release.yml`):
 
 1. Set `version` in `package.json`, commit, and push a tag `v<version>`
