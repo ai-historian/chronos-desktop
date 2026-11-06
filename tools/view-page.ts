@@ -53,7 +53,7 @@ const taskParams = Type.Object({
   model: Type.Optional(
     Type.String({
       description:
-        `Model as provider/model-id (e.g. "anthropic/claude-opus-4-8"). ` +
+        `Model as provider/model-id (e.g. "anthropic/claude-opus-5-5"). ` +
         `Default: the orchestrator's current model for new tasks, the session's current model on follow-ups. ` +
         `Any model pi has auth for works; an unknown model errors with the list of available models.`,
     })

@@ -143,7 +143,7 @@ function formatAvailable(registry: ModelRegistry, needsVision: boolean): string 
 /**
  * Resolve a model spec from the orchestrator into a pi model + API key.
  *
- * Accepts "provider/model-id" (e.g. "anthropic/claude-opus-4-8") or a bare
+ * Accepts "provider/model-id" (e.g. "anthropic/claude-opus-5-5") or a bare
  * model id, which is matched across all providers (ambiguous → error).
  * `fallback` is used when no spec is given (e.g. the orchestrator's current
  * model); if neither is set, the caller is told to choose a model explicitly.
