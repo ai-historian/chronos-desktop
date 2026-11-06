@@ -2,7 +2,7 @@
 
 Chronos v2 is a standalone Electron desktop app for the Chronos historian agent. It
 doesn't need VS Code or a global `pi` install: the app bundles the `pi` runtime and the
-Chronos agent (`../chronos`), and runs pi under Electron's own Node. A welcome window
+Chronos agent (`agent/`), and runs pi under Electron's own Node. A welcome window
 opens or creates a workspace. The main window then shows a workspace file tree, a tabbed
 center pane (page viewer, data viewer, text editors, images) and the agent chat.
 
@@ -10,8 +10,8 @@ center pane (page viewer, data viewer, text editors, images) and the agent chat.
 
 Prerequisites: Node ≥ 22.19 (pi's floor). Nothing else is needed: Electron, the pinned pi
 (`@earendil-works/pi-coding-agent@1.5.0`, see `piVersion` in `package.json`) and Playwright are
-devDependencies. In dev the app loads the agent from the sibling `../chronos` checkout, so
-build that once (`cd ../chronos && npm install && npm run build`) and again after you
+devDependencies. In dev the app loads the agent from the `agent/` folder in this repo, so
+build that once (`cd agent && npm install && npm run build`) and again after you
 change it.
 
 ```bash
@@ -27,7 +27,7 @@ npm run typecheck                  # tsc for main/preload/shared/tests and for t
 ```bash
 npm test           # builds, then runs the node:test unit/integration tests in test/*.test.ts
 npm run test:e2e   # Playwright _electron boot test (test/e2e/); run `npm run build` first
-npm run canary     # spawns the REAL pinned pi + ../chronos agent; run after bumping pi
+npm run canary     # spawns the REAL pinned pi + agent/; run after bumping pi
 ```
 
 `test/mock-pi.mjs` is a deterministic fake `pi --mode rpc` (it speaks the JSONL contract
@@ -72,10 +72,10 @@ icon opens the welcome window. On Linux and Windows the app quits with its last 
 ### The `vendor/` rule
 
 `vendor/` (gitignored) is only for packaged builds. `npm run dist` runs `bundle-agent`,
-which copies the pinned pi runtime and the built `../chronos` agent into `vendor/`, and
+which copies the pinned pi runtime and the built `agent/` pi-package into `vendor/`, and
 electron-builder ships them as `resources/vendor/`. `npm run dev` / `npm start` never read
 `vendor/`. They run pi from `node_modules/@earendil-works/pi-coding-agent` and the agent
-from `../chronos` (see `src/main/paths.ts`). Don't edit files in `vendor/`, and don't
+from `agent/` (see `src/main/paths.ts`). Don't edit files in `vendor/`, and don't
 point dev at it.
 
 ### Environment flags
@@ -89,7 +89,7 @@ point dev at it.
 
 ## Building installers
 
-Prerequisites: Node 22+, and the sibling `../chronos` agent checkout (the bundler builds it).
+Prerequisites: Node 22+, (the bundler builds `agent/` itself).
 Installers are built per OS on that OS — there is no cross-compilation.
 
 ```bash
@@ -99,7 +99,7 @@ npm run dist -- --linux AppImage deb   # pick targets explicitly
 ```
 
 - `npm run bundle-agent` fills the gitignored `vendor/` with the pi runtime and the built
-  `../chronos` agent (production `node_modules`), and refreshes `resources/licenses/`.
+  `agent/` pi-package (production `node_modules`), and refreshes `resources/licenses/`.
 - `npm run build` bundles the app into `out/` with esbuild.
 - `electron-builder` (config in `electron-builder.yml`) writes the artefacts to `dist/`:
   `Chronos-<version>.AppImage` and `chronos_<version>_amd64.deb` on Linux,
@@ -115,15 +115,13 @@ build. CI builds the arm64 dmg on `macos-latest` and the x64 dmg on `macos-15-in
 x64 leg depends on GitHub still offering an Intel macOS runner label. `bundle-agent` has
 no target-platform switch yet.
 
-**Releasing** (`.github/workflows/v2-release.yml`):
+**Releasing** (`.github/workflows/release.yml`):
 
-1. Set `version` in `chronos-v2/package.json`, commit, and push a tag `v2-<version>`
-   (e.g. `v2-0.3.0`). The workflow fails if the tag and the version differ.
+1. Set `version` in `package.json`, commit, and push a tag `v<version>`
+   (e.g. `v0.3.0`). The workflow fails if the tag and the version differ.
 2. The workflow creates one draft GitHub release for that tag, then builds the Linux,
    Windows, macOS arm64 and macOS x64 installers in parallel and uploads them all into
-   that draft (electron-builder `publish`: `tagNamePrefix: "v2-"`, `releaseType: draft`).
-   The `v2-` prefix keeps these releases apart from the VS Code extension's `v<version>`
-   tags.
+   that draft (electron-builder `publish`: `tagNamePrefix: "v"`, `releaseType: draft`).
 3. Check the draft's artefacts and publish it manually on GitHub.
 
 A manual `workflow_dispatch` run builds every installer with `--publish never` and

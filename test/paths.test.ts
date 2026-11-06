@@ -14,7 +14,7 @@ test("unpackedPath maps a path inside app.asar to app.asar.unpacked", () => {
 });
 
 test("unpackedPath leaves non-asar and already-unpacked paths alone", () => {
-  assert.equal(unpackedPath("/repo/chronos-v2/out/pdf-worker.js"), "/repo/chronos-v2/out/pdf-worker.js");
+  assert.equal(unpackedPath("/repo/out/pdf-worker.js"), "/repo/out/pdf-worker.js");
   const unpacked = "/opt/Chronos/resources/app.asar.unpacked/out/pdf-worker.js";
   assert.equal(unpackedPath(unpacked), unpacked);
   // a directory merely named like the archive is not touched

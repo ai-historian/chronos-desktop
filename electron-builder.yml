@@ -32,7 +32,7 @@ asarUnpack:
 
 linux:
   target: [deb, AppImage]
-  # Without these the deb/AppImage binary and .desktop entry take package.json "name" (chronos-v2).
+  # Without these the deb/AppImage binary and .desktop entry take package.json "name" (chronos-desktop).
   executableName: chronos
   desktop:
     entry:
@@ -48,7 +48,7 @@ deb:
 # Single-arch only: vendor/chronos/node_modules holds the sharp/@img prebuilds of the
 # machine that ran bundle-agent, so a universal (or cross-arch) dmg would ship the wrong
 # native binaries. The arch comes from the CLI (--arm64 / --x64) and each dmg is built on
-# a runner of that arch (see .github/workflows/v2-release.yml).
+# a runner of that arch (see .github/workflows/release.yml).
 mac:
   target: [dmg]
   # dmg-builder drops the arch from the default name for x64; force it so both dmgs differ.
@@ -64,11 +64,10 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
 
-# Uploads into the draft release for tag v2-<version> (created once by the release
-# workflow); the v2- prefix keeps clear of the VS Code extension's v<version> tags.
+# Uploads into the draft release for tag v<version> (created once by the release workflow).
 publish:
   provider: github
   owner: ai-historian
   repo: chronos
-  tagNamePrefix: "v2-"
+  tagNamePrefix: "v"
   releaseType: draft

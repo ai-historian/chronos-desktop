@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// Populates chronos-v2/vendor/{pi,chronos} (gitignored) for packaging, and
+// Populates vendor/{pi,chronos} (gitignored) for packaging, and
 // copies third-party licence texts into resources/licenses/.
 //
-// Chronos agent (the ../chronos pi-package):
-//   1. (../chronos)      npm ci                         full install (typescript is a devDependency)
-//   2. (../chronos)      npm run build                  tsc -> dist/
+// Chronos agent (the agent/ pi-package):
+//   1. (agent/)          npm ci                         full install (typescript is a devDependency)
+//   2. (agent/)          npm run build                  tsc -> dist/
 //   3. copy dist, prompts, skills (if any), package.json, package-lock.json -> vendor/chronos/
 //   4. (vendor/chronos)  npm ci --omit=dev --omit=peer  prod-only tree: dotenv, sharp(+@img/*), @sinclair/typebox
-// The prod install runs in the vendor copy, so ../chronos/node_modules is only
-// ever a full dev tree and ../chronos always stays buildable.
+// The prod install runs in the vendor copy, so agent/node_modules is only
+// ever a full dev tree and agent/ always stays buildable.
 // The pi peers are not vendored with the agent: pi's extension loader aliases
 // @earendil-works/pi-{ai,coding-agent} to its own bundled copies.
 //
@@ -24,7 +24,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const agentSrc = join(appRoot, "..", "chronos");
+const agentSrc = join(appRoot, "agent");
 const vendor = join(appRoot, "vendor");
 const licensesDir = join(appRoot, "resources", "licenses");
 const piSrc = join(appRoot, "node_modules", "@earendil-works", "pi-coding-agent");

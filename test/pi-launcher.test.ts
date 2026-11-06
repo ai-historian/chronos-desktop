@@ -59,8 +59,8 @@ test("resolveVendorPaths packaged vs dev", () => {
     piCli: join("/res", "vendor", "pi", "dist", "bundle", "cli.js"),
     agentDir: join("/res", "vendor", "chronos"),
   });
-  assert.deepEqual(resolveVendorPaths({ isPackaged: false, resourcesPath: "", appRoot: "/repo/chronos-v2" }), {
-    piCli: join("/repo/chronos-v2", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js"),
-    agentDir: join("/repo", "chronos"),
+  assert.deepEqual(resolveVendorPaths({ isPackaged: false, resourcesPath: "", appRoot: "/repo" }), {
+    piCli: join("/repo", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js"),
+    agentDir: join("/repo", "agent"),
   });
 });

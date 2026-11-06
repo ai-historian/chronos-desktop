@@ -1,5 +1,5 @@
 {
-  "name": "chronos-v2",
+  "name": "chronos-desktop",
   "productName": "Chronos",
   "version": "0.3.0",
   "description": "Chronos standalone app: AI agent for extracting structured data from scanned primary sources",
