@@ -125,6 +125,25 @@ jobs:
       # certificate (Developer ID Application on macOS, a code-signing cert on Windows);
       # with APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID also set, the macOS build
       # is notarized too. Without them macOS builds are ad-hoc signed (scripts/adhoc-sign.cjs).
+      # A missing secret arrives as an empty string, and electron-builder treats an empty
+      # CSC_LINK as a certificate path ("not a file"), so only non-empty values are exported.
+      - name: Configure signing from secrets (only those that exist)
+        shell: bash
+        env:
+          IN_CSC_LINK: ${{ secrets.CSC_LINK }}
+          IN_CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          IN_APPLE_ID: ${{ secrets.APPLE_ID }}
+          IN_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          IN_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            src="IN_$name"
+            if [ -n "${!src}" ]; then
+              echo "$name=${!src}" >> "$GITHUB_ENV"
+              echo "signing: $name provided"
+            fi
+          done
+
       - name: Package (and publish on tags)
         run: >
           npx electron-builder ${{ matrix.args }}
@@ -132,11 +151,6 @@ jobs:
           ${{ secrets.APPLE_ID != '' && '--config.mac.notarize=true' || '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       # Manual runs: keep the installers as downloadable artifacts (90-day retention).
       - name: Upload installers as artifacts
