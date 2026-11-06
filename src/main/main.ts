@@ -597,9 +597,9 @@ function menuActions(): MenuActions {
     zoomIn: () => {},
     zoomOut: () => {},
     zoomReset: () => {},
-    openDocs: open("https://github.com/ai-historian/chronos/blob/master/DOCS.md"),
+    openDocs: open("https://github.com/ai-historian/chronos-desktop/blob/main/DOCS.md"),
     openDiscord: open("https://discord.gg/VZmfCnqkvz"),
-    reportIssue: open("https://github.com/ai-historian/chronos/issues/new"),
+    reportIssue: open("https://github.com/ai-historian/chronos-desktop/issues/new"),
     showLogs,
     about: () =>
       void dialog.showMessageBox({ type: "info", title: "About Chronos", message: "Chronos", detail: aboutText(), buttons: ["OK"] }),

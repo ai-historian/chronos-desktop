@@ -77,7 +77,7 @@ export function connectHttp(): boolean {
   }
 
   connected = true;
-  console.log(`[chronos-http] Connected to VS Code extension on port ${httpPort}`);
+  console.log(`[chronos-http] Connected to the Chronos app on port ${httpPort}`);
   return true;
 }
 

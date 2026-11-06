@@ -69,10 +69,10 @@ export interface CallbackServer {
 
 const SUCCESS_HTML =
   "<!doctype html><meta charset=utf-8><body style='font-family:system-ui,sans-serif;padding:3rem;text-align:center'>" +
-  "<h2>Signed in to Claude ✓</h2><p>You can close this tab and return to VS Code.</p></body>";
+  "<h2>Signed in to Claude ✓</h2><p>You can close this tab and return to Chronos.</p></body>";
 const FAIL_HTML =
   "<!doctype html><meta charset=utf-8><body style='font-family:system-ui,sans-serif;padding:3rem;text-align:center'>" +
-  "<h2>Login failed</h2><p>No authorization code was returned. Return to VS Code and try again.</p></body>";
+  "<h2>Login failed</h2><p>No authorization code was returned. Return to Chronos and try again.</p></body>";
 
 /**
  * Start the localhost callback server pi's redirect_uri points at. Rejects if

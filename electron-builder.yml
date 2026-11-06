@@ -68,6 +68,6 @@ nsis:
 publish:
   provider: github
   owner: ai-historian
-  repo: chronos
+  repo: chronos-desktop
   tagNamePrefix: "v"
   releaseType: draft

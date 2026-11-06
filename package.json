@@ -3,7 +3,8 @@
   "productName": "Chronos",
   "version": "0.3.0",
   "description": "Chronos standalone app: AI agent for extracting structured data from scanned primary sources",
-  "homepage": "https://github.com/ai-historian/chronos",
+  "homepage": "https://github.com/ai-historian/chronos-desktop",
+  "repository": { "type": "git", "url": "https://github.com/ai-historian/chronos-desktop.git" },
   "author": {
     "name": "Lorenz Hufe",
     "email": "lorenz.hufe@posteo.de"
