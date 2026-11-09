@@ -55,6 +55,7 @@ export class UpdateHost {
     u.autoInstallOnAppQuit = true;
     u.on("update-available", (info) => {
       this.phase = "idle";
+      if (this._status.kind === "ready" || this._status.kind === "downloading") return;
       this.setStatus({ kind: "available", version: String(info?.version), mode: o.mode });
       if (this.manual) o.onManualResult?.({ kind: "available", version: String(info?.version) });
     });
@@ -84,7 +85,7 @@ export class UpdateHost {
   }
 
   async check(o: { manual: boolean }): Promise<void> {
-    if (this.phase !== "idle") return;
+    if (this.phase !== "idle" || this._status.kind === "ready") return;
     this.phase = "checking";
     this.manual = o.manual;
     try {

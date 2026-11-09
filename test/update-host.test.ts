@@ -238,3 +238,14 @@ test("handleWebviewMessage consumes only update messages", async () => {
   assert.deepEqual(s.opened, [DOWNLOAD_PAGE]);
   assert.equal(s.host.handleWebviewMessage({ type: "login" } as any), false);
 });
+
+test("check is ignored once an update is ready", async () => {
+  const s = setup();
+  await toAvailable(s);
+  s.host.download();
+  s.updater.emit("update-downloaded", { version: "0.4.0" });
+  await s.host.check({ manual: true });
+  assert.equal(s.updater.checkCalls, 1);
+  s.updater.emit("update-available", { version: "0.4.0" });
+  assert.deepEqual(s.host.status, { kind: "ready", version: "0.4.0" });
+});
