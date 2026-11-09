@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentHost } from "../src/main/agent-host";
@@ -326,4 +326,76 @@ test("Data tab merges the active collection's files with the source's (source wi
     await host.stop();
     rmSync(ws, { recursive: true, force: true });
   }
+});
+
+test("collections/plan posts a snapshot of sources and manifests", async () => {
+  const ws = makeWorkspace();
+  writeCollection(ws, "parish", { name: "Parish books", members: [{ path: "sources/TestSource" }] });
+  const { host, posted } = makeHost(ws);
+  try {
+    await host.start();
+    await host.handleWebviewMessage({ type: "collections/plan" });
+    const m = posted.find((x) => x.type === "collections/snapshot");
+    assert.ok(m && m.type === "collections/snapshot");
+    assert.deepEqual(m.snapshot, {
+      sources: [{ path: "sources/TestSource", ref: "TestSource", pageCount: 1, outOfTree: false }],
+      collections: [{ id: "parish", name: "Parish books", members: [{ path: "sources/TestSource" }] }],
+      takenIds: ["parish"],
+    });
+  } finally { await host.stop(); rmSync(ws, { recursive: true, force: true }); }
+});
+
+test("applyCollectionBatch is refused while the agent is streaming", async () => {
+  const ws = makeWorkspace();
+  const { host } = makeHost(ws);
+  try {
+    await host.start();
+    await host.handleWebviewMessage({ type: "prompt", text: "hang: forever" });
+    await waitFor(() => host.streaming || undefined);
+    const r = await host.applyCollectionBatch({ ops: [{ op: "create", id: "x", name: "X", members: [{ path: "sources/TestSource" }] }] });
+    assert.deepEqual(r, { ok: false, error: "The agent is mid-answer; try again when it finishes.", applied: 0 });
+    assert.ok(!existsSync(join(ws, "collections", "x.json")));
+  } finally { await host.stop(); rmSync(ws, { recursive: true, force: true }); }
+});
+
+test("applyCollectionBatch writes, refreshes the picker and re-selects the active collection", async () => {
+  const ws = makeWorkspace();
+  writeCollection(ws, "parish", { name: "Parish books", members: [{ path: "sources/TestSource" }] });
+  const { host, posted } = makeHost(ws);
+  try {
+    await host.start();
+    await waitFor(() => posted.some((m) => m.type === "models") || undefined);
+    // active = parish (as the agent would announce it)
+    await postHttp(host.httpPort, { type: "collection", id: "parish", name: "Parish books", dataDir: ws });
+    await waitFor(() => host.activeCollectionId === "parish" || undefined);
+
+    // (a) active collection still exists → re-selected (mock-pi answers /select-collection parish by re-announcing it)
+    posted.length = 0;
+    assert.deepEqual(await host.applyCollectionBatch({ ops: [{ op: "rename", id: "parish", name: "Parish renamed" }] }), { ok: true });
+    const pick = posted.find((m) => m.type === "collections");
+    assert.ok(pick && pick.type === "collections" && pick.collections[0].name === "Parish renamed");
+    await waitFor(() => (posted.filter((m) => m.type === "collections").length >= 2 ? true : undefined));
+    assert.equal(host.activeCollectionId, "parish");
+
+    // (b) active collection deleted → falls back to all sources
+    assert.deepEqual(await host.applyCollectionBatch({ ops: [{ op: "delete", id: "parish" }] }), { ok: true });
+    await waitFor(() => host.activeCollectionId === null || undefined);
+
+    // (c) active = all sources → no prompt: exactly one collections message (the picker refresh)
+    posted.length = 0;
+    assert.deepEqual(await host.applyCollectionBatch({ ops: [{ op: "create", id: "new", name: "New", members: [{ path: "sources/TestSource" }] }] }), { ok: true });
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(posted.filter((m) => m.type === "collections").length, 1);
+  } finally { await host.stop(); rmSync(ws, { recursive: true, force: true }); }
+});
+
+test("applyCollectionBatch with no agent running still writes and replies ok", async () => {
+  const ws = makeWorkspace();
+  const { host, posted } = makeHost(ws);
+  try {
+    const r = await host.applyCollectionBatch({ ops: [{ op: "create", id: "offline", name: "Offline", members: [{ path: "sources/TestSource" }] }] });
+    assert.deepEqual(r, { ok: true });
+    assert.ok(existsSync(join(ws, "collections", "offline.json")));
+    assert.ok(posted.some((m) => m.type === "collections"));
+  } finally { rmSync(ws, { recursive: true, force: true }); }
 });

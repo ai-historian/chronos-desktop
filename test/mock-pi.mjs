@@ -145,7 +145,10 @@ function handlePrompt(message) {
     return;
   }
   if (m.startsWith("/")) return; // other slash commands: handled, nothing to emit
-  if (m.startsWith("ask:")) {
+  if (m.startsWith("hang:")) {
+    // Enter the streaming state and never leave it (until the host stops us).
+    send({ type: "agent_start" });
+  } else if (m.startsWith("ask:")) {
     const uiId = `ui-${++uiSeq}`;
     pendingUi.set(uiId, (resp) => emitAssistant(resp.cancelled ? "cancelled" : `picked: ${resp.value}`));
     send({
