@@ -15,7 +15,7 @@ const nodeCtx = await esbuild.context({
   format: "cjs",
   platform: "node",
   target: "node22",
-  external: ["electron", "mupdf"],
+  external: ["electron", "mupdf", "electron-updater"],
   sourcemap: true,
   minify: false,
 });

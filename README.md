@@ -117,6 +117,12 @@ build. CI builds the arm64 dmg on `macos-latest` and the x64 dmg on `macos-15-in
 x64 leg depends on GitHub still offering an Intel macOS runner label. `bundle-agent` has
 no target-platform switch yet.
 
+### Updates
+
+The app checks for a newer release on startup (15 s after launch) and from Help ▸ Check for updates…; the startup check can be switched off under Help ▸ Check for updates automatically. On Windows (NSIS installer) and Linux AppImage it downloads on request and restarts into the new version; on the `.deb`, on macOS and in unpackaged runs it only announces the new version and links to https://hufe.info/chronos/ (unpackaged runs and e2e do not check at all). Nothing is downloaded or installed without a click.
+
+Updates reach users only once the `v2-<version>` draft release is published, because electron-updater reads the release's `latest*.yml` files. In-app install on macOS additionally requires a signed (and notarized) build and a `zip` target next to the `dmg`; until then macOS stays notify-only.
+
 **macOS and signing.** Without an Apple Developer certificate the macOS builds are
 ad-hoc signed by `scripts/adhoc-sign.cjs`. The app runs, but on first launch macOS blocks
 it as from an unidentified developer: open System Settings → Privacy & Security, scroll

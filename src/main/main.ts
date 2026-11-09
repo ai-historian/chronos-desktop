@@ -14,7 +14,9 @@ import { RecentStore, ensureWorkspace, pickFolderToCreate, pickWorkspaceToOpen }
 import { appLogPath, installAppLog } from "./app-log";
 import { buildMenu, type MenuActions, type MenuState } from "./menu";
 import { ensurePiDefaultModel, rememberModelChoice } from "./pi-settings";
-import { readAppSettings, writeAppSettings } from "./app-settings";
+import { readAppSettings, writeAppSettings, type AppSettings } from "./app-settings";
+import { autoUpdater } from "electron-updater";
+import { UpdateHost, updateMode, DOWNLOAD_PAGE, type ManualResult, type UpdateMode, type UpdaterLike } from "./update-host";
 import {
   findIncompleteImports,
   importFiles,
@@ -78,7 +80,9 @@ function closeMainWindow(after: AfterClose): void {
   mainWindow.close();
 }
 let recent: RecentStore;
-let themePref: "system" | ThemeName = "system";
+let settings: AppSettings = { theme: "system", checkForUpdates: true };
+let updateHost: UpdateHost | undefined;
+let updateModeValue: UpdateMode = "off";
 // Live main-window host and its last reported state, for the application menu.
 let activeHost: AgentHost | undefined;
 let hostState: Pick<MenuState, "models" | "currentModel" | "thinking" | "yolo"> = { models: [], thinking: "off", yolo: false };
@@ -89,7 +93,7 @@ function webPrefs(): Electron.WebPreferences {
 
 function sendTheme(win: BrowserWindow): void {
   if (win.isDestroyed() || win.webContents.isDestroyed()) return;
-  const name = resolveTheme(themePref, nativeTheme.shouldUseDarkColors);
+  const name = resolveTheme(settings.theme, nativeTheme.shouldUseDarkColors);
   win.webContents.send("chronos:msg", { type: "theme", name, css: themeCss(name) });
 }
 
@@ -213,6 +217,7 @@ function createMainWindow(workspaceDir: string): BrowserWindow {
       return;
     }
     // File-tree / file messages first; everything else is the agent host's.
+    if (updateHost?.handleWebviewMessage(msg)) return;
     if (tree.handle(msg)) return;
     void host?.handleWebviewMessage(msg);
   };
@@ -291,6 +296,7 @@ function createMainWindow(workspaceDir: string): BrowserWindow {
   rebuildMenu();
   // Every (re)load gets a fresh root listing; the watcher dedupes already-watched dirs.
   win.webContents.on("did-finish-load", () => tree.start());
+  win.webContents.on("did-finish-load", () => updateHost?.repost());
   win.webContents.once("did-finish-load", () => {
     void h.start();
     void promptRecoverIncompleteImports(win, h, workspaceDir);
@@ -358,15 +364,45 @@ function hostMsg(msg: WebviewToExt): void {
   void activeHost?.handleWebviewMessage(msg);
 }
 
-function setThemePref(t: "system" | ThemeName): void {
-  themePref = t;
+function saveSettings(patch: Partial<AppSettings>): void {
+  settings = { ...settings, ...patch };
   try {
-    writeAppSettings(app.getPath("userData"), { ...readAppSettings(app.getPath("userData")), theme: t });
+    writeAppSettings(app.getPath("userData"), settings);
   } catch (e) {
     console.error("[chronos] could not save settings:", e);
   }
-  for (const w of BrowserWindow.getAllWindows()) sendTheme(w);
   rebuildMenu();
+}
+
+function setThemePref(t: "system" | ThemeName): void {
+  saveSettings({ theme: t });
+  for (const w of BrowserWindow.getAllWindows()) sendTheme(w);
+}
+
+function manualResultText(r: ManualResult): string {
+  if (r.kind === "upToDate") return `Chronos ${r.version} is up to date.`;
+  if (r.kind === "available") return `Chronos ${r.version} is available. Download it from ${DOWNLOAD_PAGE}`;
+  return `Update check failed: ${r.message}`;
+}
+
+function startUpdates(): void {
+  updateModeValue = updateMode({ platform: process.platform, isPackaged: app.isPackaged, env: process.env });
+  if (updateModeValue === "off") return;
+  autoUpdater.logger = null;
+  updateHost = new UpdateHost({
+    updater: autoUpdater as unknown as UpdaterLike, // electron-updater's typed `on` overloads differ from UpdaterLike's
+    mode: updateModeValue,
+    currentVersion: app.getVersion(),
+    post: sendToMain,
+    openExternal: (u) => void shell.openExternal(u),
+    log: (line) => console.log("[update] " + line),
+    onManualResult: (r) => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        void dialog.showMessageBox({ type: r.kind === "error" ? "warning" : "info", title: "Chronos updates", message: manualResultText(r) });
+      }
+    },
+  });
+  if (settings.checkForUpdates) setTimeout(() => void updateHost?.check({ manual: false }), 15_000);
 }
 
 // ── source import ───────────────────────────────────────────────────────────
@@ -618,8 +654,8 @@ function menuActions(): MenuActions {
     openDiscord: open("https://discord.gg/VZmfCnqkvz"),
     reportIssue: open("https://github.com/ai-historian/chronos-desktop/issues/new"),
     showLogs,
-    checkForUpdates: () => {}, // replaced in Task 4 (update wiring)
-    toggleUpdateCheck: () => {}, // replaced in Task 4 (update wiring)
+    checkForUpdates: () => void updateHost?.check({ manual: true }),
+    toggleUpdateCheck: () => saveSettings({ checkForUpdates: !settings.checkForUpdates }),
     about: () =>
       void dialog.showMessageBox({ type: "info", title: "About Chronos", message: "Chronos", detail: aboutText(), buttons: ["OK"] }),
   };
@@ -629,11 +665,11 @@ function rebuildMenu(): void {
   const hasWorkspace = !!(mainWindow && !mainWindow.isDestroyed());
   const state: MenuState = {
     ...hostState,
-    theme: themePref,
+    theme: settings.theme,
     hasWorkspace,
     recent: recent ? recent.list() : [],
-    updateCheck: true, // replaced in Task 4 (update wiring)
-    updatesSupported: false, // replaced in Task 4 (update wiring)
+    updateCheck: settings.checkForUpdates,
+    updatesSupported: updateModeValue !== "off",
   };
   if (!hasWorkspace) Object.assign(state, { models: [], currentModel: undefined });
   const menu = buildMenu(menuActions(), state);
@@ -646,9 +682,11 @@ function rebuildMenu(): void {
 
 app.whenReady().then(() => {
   recent = new RecentStore(join(app.getPath("userData"), "recent.json"));
-  themePref = readAppSettings(app.getPath("userData")).theme;
+  settings = readAppSettings(app.getPath("userData"));
   const vendor = resolveVendorPaths({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appRoot: app.getAppPath() });
   console.log(`[chronos] pi cli: ${vendor.piCli} (agent: ${vendor.agentDir})`);
+  rebuildMenu();
+  startUpdates();
   rebuildMenu();
   installChronosFileHandler(() => (currentWorkspace ? [currentWorkspace] : []));
   const fromArgv = workspaceFromArgv(process.argv);
