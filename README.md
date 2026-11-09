@@ -5,6 +5,8 @@ doesn't need VS Code or a global `pi` install: the app bundles the `pi` runtime 
 Chronos agent (`agent/`), and runs pi under Electron's own Node. A welcome window
 opens or creates a workspace. The main window then shows a workspace file tree, a tabbed
 center pane (page viewer, data viewer, text editors, images) and the agent chat.
+Sources can be grouped into named collections with the "Organize sources" button in the
+header (or by writing `collections/<id>.json` by hand).
 
 ## Development
 

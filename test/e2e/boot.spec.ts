@@ -2,7 +2,7 @@
 // workspace with test/mock-pi.mjs standing in for pi (CHRONOS_PI_LAUNCH_OVERRIDE),
 // and drives the renderer through its CHRONOS_E2E test seams. Requires `npm run build`.
 import { _electron as electron, test, expect, type ElectronApplication, type Page } from "@playwright/test";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -94,6 +94,28 @@ test("pending UI requests are cleared when the agent exits", async () => {
   process.kill(pid!);
   await expect(modal).toBeHidden();
   await expect(page.locator("chronos-chat #exit-banner")).toBeVisible();
+});
+
+test("Organize sources: create a collection, tick a source, save", async () => {
+  await invoke(page, "openOrganize");
+  const dialog = page.locator(".organize-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("td.organize-src")).toContainText("TestSource");
+  await dialog.locator(".organize-add-btn").click();
+  await dialog.locator("input.organize-inline").fill("Parish Books");
+  await dialog.locator("input.organize-inline").press("Enter");
+  await expect(dialog.locator("th.organize-col")).toHaveCount(1);
+  // A new empty column is one pending change, but Save refuses it until it has a member.
+  await expect(dialog.locator(".organize-dirty")).toContainText("1 unsaved change");
+  await dialog.locator(".organize-save").click();
+  await expect(dialog.locator(".organize-error")).toContainText("has no sources");
+  await dialog.locator("td.organize-cell input[type=checkbox]").first().check();
+  await dialog.locator(".organize-save").click();
+  await expect(dialog).toBeHidden();
+  const file = join(fixture, "collections", "parish-books.json");
+  expect(existsSync(file)).toBe(true);
+  expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ name: "Parish Books", members: [{ path: "sources/TestSource" }] });
+  await expect(page.locator("#app-header select.control-select option", { hasText: "Parish Books" })).toHaveCount(1);
 });
 
 test("no CSP violations, failed loads or page errors", async () => {
