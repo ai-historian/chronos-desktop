@@ -196,7 +196,7 @@ test("update items are disabled when updates are unsupported", () => {
 
 - [ ] **Step 2: Run** `node --import tsx --test test/menu.test.ts` — expected: FAIL.
 - [ ] **Step 3: Implement** in `menu.ts`.
-- [ ] **Step 4: Run** the menu tests — expected: PASS. `npm run typecheck` will now FAIL in `main.ts` (missing actions/state); that is fixed in Task 4, so do not commit `src/` typecheck-clean here — instead commit with the note that Task 4 completes the contract.
+- [ ] **Step 4: Run** the menu tests — expected: PASS. Then make `npm run typecheck` pass again: in `main.ts` add to `menuActions()` the stubs `checkForUpdates: () => {}` and `toggleUpdateCheck: () => {}`, and to the `rebuildMenu()` state `updateCheck: true, updatesSupported: false`, each with the comment `// replaced in Task 4 (update wiring)`. Task 4 replaces them.
 - [ ] **Step 5: Commit** `feat(v2): Help menu items for update checks`
 
 ---
