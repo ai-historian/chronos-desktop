@@ -2,7 +2,7 @@
 
 **Goal.** Chronos tells the user when a newer release exists and, where the installer
 allows it, downloads and installs it. Users of the first release with this feature
-(v0.4.0) never have to visit the download page again on Windows and AppImage.
+(v0.3.1) never have to visit the download page again on Windows and AppImage.
 
 **Source of truth.** The published GitHub releases of `ai-historian/chronos-desktop`.
 electron-builder already uploads `latest.yml`, `latest-mac.yml`, `latest-linux.yml` and

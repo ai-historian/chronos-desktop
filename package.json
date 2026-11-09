@@ -1,7 +1,7 @@
 {
   "name": "chronos-desktop",
   "productName": "Chronos",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Chronos standalone app: AI agent for extracting structured data from scanned primary sources",
   "homepage": "https://github.com/ai-historian/chronos-desktop",
   "repository": {
