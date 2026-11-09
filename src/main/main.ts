@@ -361,7 +361,7 @@ function hostMsg(msg: WebviewToExt): void {
 function setThemePref(t: "system" | ThemeName): void {
   themePref = t;
   try {
-    writeAppSettings(app.getPath("userData"), { theme: t });
+    writeAppSettings(app.getPath("userData"), { ...readAppSettings(app.getPath("userData")), theme: t });
   } catch (e) {
     console.error("[chronos] could not save settings:", e);
   }
