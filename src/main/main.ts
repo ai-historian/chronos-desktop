@@ -311,9 +311,11 @@ function createMainWindow(workspaceDir: string): BrowserWindow {
     if (!mainOwnClose && !quitting) mainAfterClose = { kind: "welcome" };
     mainOwnClose = false;
   });
-  // The renderer's beforeunload cancelled the close (unsaved edits): a quit in progress is aborted.
+  // The renderer's beforeunload cancelled the close (unsaved edits): a quit in progress is aborted,
+  // and so is a "Restart to update" that started it.
   win.webContents.on("will-prevent-unload", () => {
     quitting = false;
+    updateHost?.cancelInstall();
   });
   win.on("closed", () => {
     const after: AfterClose = mainWindow === win ? mainAfterClose : { kind: "welcome" };
@@ -396,6 +398,7 @@ function startUpdates(): void {
     post: sendToMain,
     openExternal: (u) => void shell.openExternal(u),
     log: (line) => console.log("[update] " + line),
+    requestQuit: () => app.quit(),
     onManualResult: (r) => {
       if (!mainWindow || mainWindow.isDestroyed()) {
         void dialog.showMessageBox({ type: r.kind === "error" ? "warning" : "info", title: "Chronos updates", message: manualResultText(r) });
@@ -704,6 +707,8 @@ app.on("before-quit", () => {
   // If the main window's renderer pauses the quit for unsaved edits, finish it after window/close.
   if (mainWindow && !mainWindow.isDestroyed()) mainAfterClose = { kind: "quit" };
 });
+// Every window has closed (no veto left): run the installer if "Restart to update" asked for it.
+app.on("will-quit", () => updateHost?.finishInstall());
 // macOS convention: closing the last window keeps the app running (in the dock); clicking the dock
 // icon then reopens the welcome window. Linux/Windows quit with the last window.
 app.on("window-all-closed", () => {

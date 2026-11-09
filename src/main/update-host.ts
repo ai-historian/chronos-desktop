@@ -21,7 +21,7 @@ export interface UpdaterLike {
   autoInstallOnAppQuit: boolean;
   checkForUpdates(): Promise<unknown>;
   downloadUpdate(): Promise<unknown>;
-  quitAndInstall(): void;
+  quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
   on(event: "update-available" | "update-not-available" | "download-progress" | "update-downloaded" | "error", listener: (arg: any) => void): unknown;
 }
 
@@ -37,6 +37,8 @@ export interface UpdateHostOptions {
   post: (msg: ExtToWebview) => void;
   openExternal: (url: string) => void;
   log: (line: string) => void;
+  /** Start a normal app quit (main: `app.quit()`); the install runs from finishInstall(). */
+  requestQuit: () => void;
   onManualResult?: (r: ManualResult) => void;
 }
 
@@ -47,6 +49,8 @@ export class UpdateHost {
   private _status: UpdateStatus = { kind: "none" };
   private phase: "idle" | "checking" | "downloading" = "idle";
   private manual = false;
+  /** "Restart to update" was clicked; install once every window has closed. */
+  private installRequested = false;
 
   constructor(o: UpdateHostOptions) {
     this.o = o;
@@ -105,8 +109,26 @@ export class UpdateHost {
     });
   }
 
+  /**
+   * "Restart to update": a normal quit first, so unsaved edits can still veto it; the
+   * installer runs only from finishInstall() once every window has closed.
+   */
   install(): void {
-    if (this._status.kind === "ready") this.o.updater.quitAndInstall();
+    if (this._status.kind !== "ready") return;
+    this.installRequested = true;
+    this.o.requestQuit();
+  }
+
+  /** The quit was prevented (unsaved edits): forget the pending install. */
+  cancelInstall(): void {
+    this.installRequested = false;
+  }
+
+  /** Main calls this from `will-quit` (every window has closed): run a requested install. */
+  finishInstall(): void {
+    if (!this.installRequested) return;
+    this.installRequested = false;
+    this.o.updater.quitAndInstall(true, true);
   }
 
   openDownloadPage(): void {

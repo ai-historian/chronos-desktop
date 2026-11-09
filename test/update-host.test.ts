@@ -16,6 +16,7 @@ class FakeUpdater implements UpdaterLike {
   checkCalls = 0;
   downloadCalls = 0;
   installCalls = 0;
+  installArgs: Array<[boolean | undefined, boolean | undefined]> = [];
   checkResult: { resolve: () => void; reject: (e: unknown) => void } | null = null;
   downloadResult: { resolve: () => void; reject: (e: unknown) => void } | null = null;
   on(event: string, listener: (arg: any) => void) {
@@ -39,8 +40,9 @@ class FakeUpdater implements UpdaterLike {
       this.downloadResult = { resolve: () => resolve(undefined), reject };
     });
   }
-  quitAndInstall() {
+  quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean) {
     this.installCalls++;
+    this.installArgs.push([isSilent, isForceRunAfter]);
   }
 }
 
@@ -50,6 +52,7 @@ function setup(mode: "install" | "notify" = "install") {
   const logs: string[] = [];
   const opened: string[] = [];
   const results: ManualResult[] = [];
+  const quits: number[] = [];
   const host = new UpdateHost({
     updater,
     mode,
@@ -57,9 +60,10 @@ function setup(mode: "install" | "notify" = "install") {
     post: (m) => posted.push(m),
     openExternal: (u) => opened.push(u),
     log: (l) => logs.push(l),
+    requestQuit: () => quits.push(1),
     onManualResult: (r) => results.push(r),
   });
-  return { updater, posted, logs, opened, results, host };
+  return { updater, posted, logs, opened, results, quits, host };
 }
 
 const tick = () => new Promise<void>((r) => setImmediate(r));
@@ -206,15 +210,54 @@ test("notify mode: download is a no-op, openDownloadPage opens the page", async 
   assert.equal(DOWNLOAD_PAGE, "https://hufe.info/chronos/");
 });
 
+async function toReady(s: ReturnType<typeof setup>) {
+  await toAvailable(s);
+  s.host.download();
+  s.updater.emit("update-downloaded", { version: "0.4.0" });
+  s.posted.length = 0;
+}
+
 test("install only when ready", async () => {
   const s = setup();
   await toAvailable(s);
   s.host.install();
+  assert.equal(s.quits.length, 0);
+  s.host.finishInstall();
   assert.equal(s.updater.installCalls, 0);
-  s.host.download();
-  s.updater.emit("update-downloaded", { version: "0.4.0" });
+});
+
+test("install requests a normal quit and does not install yet", async () => {
+  const s = setup();
+  await toReady(s);
   s.host.install();
+  assert.equal(s.quits.length, 1);
+  assert.equal(s.updater.installCalls, 0);
+});
+
+test("finishInstall after install runs a silent install with relaunch", async () => {
+  const s = setup();
+  await toReady(s);
+  s.host.install();
+  s.host.finishInstall();
+  assert.deepEqual(s.updater.installArgs, [[true, true]]);
+  s.host.finishInstall();
   assert.equal(s.updater.installCalls, 1);
+});
+
+test("cancelInstall then finishInstall installs nothing", async () => {
+  const s = setup();
+  await toReady(s);
+  s.host.install();
+  s.host.cancelInstall();
+  s.host.finishInstall();
+  assert.equal(s.updater.installCalls, 0);
+});
+
+test("finishInstall without a request installs nothing", async () => {
+  const s = setup();
+  await toReady(s);
+  s.host.finishInstall();
+  assert.equal(s.updater.installCalls, 0);
 });
 
 test("repost re-sends the current status", async () => {
@@ -233,7 +276,7 @@ test("handleWebviewMessage consumes only update messages", async () => {
   assert.equal(s.updater.downloadCalls, 1);
   s.updater.emit("update-downloaded", { version: "0.4.0" });
   assert.equal(s.host.handleWebviewMessage({ type: "update/install" }), true);
-  assert.equal(s.updater.installCalls, 1);
+  assert.equal(s.quits.length, 1);
   assert.equal(s.host.handleWebviewMessage({ type: "update/openDownloadPage" }), true);
   assert.deepEqual(s.opened, [DOWNLOAD_PAGE]);
   assert.equal(s.host.handleWebviewMessage({ type: "login" } as any), false);
