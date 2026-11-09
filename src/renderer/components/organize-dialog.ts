@@ -259,17 +259,29 @@ export class ChronosOrganizeDialog extends LitElement {
   // ── render ────────────────────────────────────────────────────────────────
 
   private renderInline(value: string, label: string): TemplateResult {
-    return html`<input
-      class="dialog-input organize-inline ${this.inlineInvalid ? "is-invalid" : ""}"
-      .value=${value}
-      placeholder="Collection name"
-      aria-label=${label}
-      aria-invalid=${this.inlineInvalid ? "true" : "false"}
-      autocomplete="off"
-      spellcheck="false"
-      @input=${() => (this.inlineInvalid = false)}
-      @keydown=${this.onInlineKeydown}
-    />`;
+    const isNew = this.editing?.kind === "new";
+    return html`<span class="organize-inline-wrap">
+      <input
+        class="dialog-input organize-inline ${this.inlineInvalid ? "is-invalid" : ""}"
+        .value=${value}
+        placeholder="Collection name"
+        aria-label=${label}
+        aria-invalid=${this.inlineInvalid ? "true" : "false"}
+        autocomplete="off"
+        spellcheck="false"
+        @input=${() => (this.inlineInvalid = false)}
+        @keydown=${this.onInlineKeydown}
+      />
+      <button
+        class="organize-inline-ok"
+        title=${isNew ? "Add this collection (Enter)" : "Apply the new name (Enter)"}
+        @click=${() => this.commitInline(this.querySelector<HTMLInputElement>("input.organize-inline")?.value ?? "")}
+      >
+        ${isNew ? "Add" : "Rename"}
+      </button>
+      <button class="organize-inline-cancel" title="Cancel (Esc)" aria-label="Cancel" @click=${() => (this.editing = null)}>✕</button>
+      <span class="organize-inline-hint">Enter to confirm · Esc to cancel</span>
+    </span>`;
   }
 
   private isEmptyCol(col: DesiredCollection): boolean {
