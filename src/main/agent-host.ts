@@ -495,12 +495,12 @@ export class AgentHost {
     return this.activeCollection?.name ?? null;
   }
 
-  /** The active collection's id (null = "all sources" or none announced yet). */
   /** True while the agent is mid-answer (exposed for tests). */
   get streaming(): boolean {
     return this.isStreaming;
   }
 
+  /** The active collection's id (null = "all sources" or none announced yet). */
   get activeCollectionId(): string | null {
     return this.activeCollection?.id ?? null;
   }
@@ -800,11 +800,24 @@ export class AgentHost {
           break;
         }
         case "collections/plan":
-          this.post({ type: "collections/snapshot", snapshot: readSnapshot(this.workspaceDir) });
+          // Always answer: the dialog waits on a reply.
+          try {
+            this.post({ type: "collections/snapshot", snapshot: readSnapshot(this.workspaceDir) });
+          } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            this.post({ type: "collections/applied", result: { ok: false, error: `Could not read collections: ${message}`, applied: 0 } });
+          }
           break;
-        case "collections/apply":
-          this.post({ type: "collections/applied", result: await this.applyCollectionBatch(msg.batch) });
+        case "collections/apply": {
+          let result: CollectionApplyResult;
+          try {
+            result = await this.applyCollectionBatch(msg.batch);
+          } catch (e) {
+            result = { ok: false, error: e instanceof Error ? e.message : String(e), applied: 0 };
+          }
+          this.post({ type: "collections/applied", result });
           break;
+        }
         case "refreshSessions":
           this.postSessions();
           break;

@@ -399,3 +399,14 @@ test("applyCollectionBatch with no agent running still writes and replies ok", a
     assert.ok(posted.some((m) => m.type === "collections"));
   } finally { rmSync(ws, { recursive: true, force: true }); }
 });
+
+test("collections/apply always answers, even when the batch is malformed", async () => {
+  const ws = makeWorkspace();
+  const { host, posted } = makeHost(ws);
+  try {
+    await host.handleWebviewMessage({ type: "collections/apply", batch: { ops: null as any } });
+    const m = posted.find((x) => x.type === "collections/applied");
+    assert.ok(m && m.type === "collections/applied");
+    assert.equal(m.result.ok, false);
+  } finally { rmSync(ws, { recursive: true, force: true }); }
+});
