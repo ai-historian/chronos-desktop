@@ -18,12 +18,14 @@ import "./file-tree";
 import "./page-viewer";
 import "./data-viewer";
 import "./provider-dialog";
+import "./organize-dialog";
 import "./center-tabs";
 import "./code-editor";
 import type { ChronosCodeEditor } from "./code-editor";
 import { TabsModel, type Tab } from "../tabs-model";
 import { SaveQueue, type SaveRequest } from "../save-queue";
 import type { ProviderOption, OauthStatusView } from "./provider-dialog";
+import type { CollectionApplyResult, CollectionSnapshot } from "../../shared/collection-edit";
 import brandIcon from "../assets/chronos-icon.png";
 
 interface ProgressEntry {
@@ -80,6 +82,7 @@ export class ChronosApp extends LitElement {
     treeHidden: { state: true },
     showPagePrompt: { state: true },
     progress: { state: true },
+    organize: { state: true },
   };
 
   declare state: RpcSessionState | null;
@@ -112,6 +115,8 @@ export class ChronosApp extends LitElement {
   declare showPagePrompt: { source: string; page: string } | null;
   /** Running host tasks (source imports), keyed by progress id. */
   declare progress: Map<string, ProgressEntry>;
+  /** Non-null while the Organize sources dialog is open. */
+  declare organize: { snapshot: CollectionSnapshot | null; result: CollectionApplyResult | null } | null;
 
   private postMessage: (msg: WebviewToExt) => void = () => {};
   private uiRequestQueue: RpcExtensionUIRequest[] = [];
@@ -173,6 +178,7 @@ export class ChronosApp extends LitElement {
     this.treeHidden = false;
     this.showPagePrompt = null;
     this.progress = new Map();
+    this.organize = null;
   }
 
   // Context occupancy = what the next request will carry: fresh input +
@@ -383,6 +389,13 @@ export class ChronosApp extends LitElement {
         this.collections = msg.collections;
         this.activeCollection = msg.active;
         break;
+      case "collections/snapshot":
+        if (this.organize) this.organize = { ...this.organize, snapshot: msg.snapshot };
+        break;
+      case "collections/applied":
+        if (this.organize) this.organize = { ...this.organize, result: msg.result };
+        if (msg.result.ok && msg.result.warning) this.pushToast("warning", msg.result.warning);
+        break;
       case "sessions":
         this.sessions = msg.sessions;
         break;
@@ -470,6 +483,9 @@ export class ChronosApp extends LitElement {
       case "clickReopen":
         this.querySelector<HTMLButtonElement>(".view-reopen")?.click();
         break;
+      case "openOrganize":
+        this.openOrganize();
+        break;
     }
   }
 
@@ -488,7 +504,13 @@ export class ChronosApp extends LitElement {
       chat: this.chat?.testSnapshot() ?? null,
       viewer: this.viewer?.testSnapshot() ?? null,
       data: this.dataViewer?.testSnapshot() ?? null,
+      organizeOpen: this.organize !== null,
     };
+  }
+
+  private openOrganize(): void {
+    this.organize = { snapshot: null, result: null };
+    this.postMessage({ type: "collections/plan" });
   }
 
   private pushToast(level: Toast["level"], message: string): void {
@@ -923,6 +945,14 @@ export class ChronosApp extends LitElement {
               }}
             ></chronos-provider-dialog>`
           : nothing}
+        ${this.organize
+          ? html`<chronos-organize-dialog
+              .snapshot=${this.organize.snapshot}
+              .result=${this.organize.result}
+              .post=${(m: WebviewToExt) => this.postMessage(m)}
+              @close=${() => (this.organize = null)}
+            ></chronos-organize-dialog>`
+          : nothing}
         ${this.sessionLoading ? this.renderSessionLoading() : nothing}
         ${this.toasts.length ? this.renderToasts() : nothing}
       </div>
@@ -958,6 +988,9 @@ export class ChronosApp extends LitElement {
                 </select>
               </label>`
             : nothing}
+          <button class="header-btn organize-btn" title="Put sources into collections" @click=${() => this.openOrganize()}>
+            Organize sources
+          </button>
           <label class="control">
             <span class="control-label">Source</span>
             <select

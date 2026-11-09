@@ -1725,6 +1725,198 @@ details.compaction-divider summary:hover .compaction-label {
   gap: 8px;
 }
 
+/* ── organize sources dialog ─────────────────────────────────────────────── */
+
+.organize-dialog {
+  width: min(1100px, 90vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  top: 10%;
+  outline: none;
+}
+
+.organize-dialog .dialog-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.organize-close {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--ch-radius-sm);
+  color: var(--ch-muted);
+  background: transparent;
+}
+
+.organize-close:hover {
+  background: var(--ch-surface-2);
+  color: var(--ch-fg);
+}
+
+.organize-grid {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--ch-border-soft);
+  border-radius: var(--ch-radius-sm);
+}
+
+.organize-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+
+.organize-table th,
+.organize-table td {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--ch-border-soft);
+  background: var(--vscode-editorWidget-background, var(--ch-bg));
+  white-space: nowrap;
+}
+
+.organize-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-weight: 600;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.organize-src {
+  position: sticky;
+  left: 0;
+  text-align: left;
+  border-right: 1px solid var(--ch-border-soft);
+}
+
+.organize-table thead th.organize-src {
+  z-index: 2;
+  text-align: left;
+}
+
+.organize-pages {
+  margin-left: 6px;
+  color: var(--ch-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.organize-cell {
+  text-align: center;
+}
+
+.organize-rename,
+.organize-delete {
+  margin-left: 2px;
+  padding: 0 3px;
+  border-radius: var(--ch-radius-sm);
+  color: var(--ch-muted);
+  background: transparent;
+  font-size: 11px;
+}
+
+.organize-rename:hover,
+.organize-delete:hover {
+  background: var(--ch-surface-2);
+  color: var(--ch-fg);
+}
+
+.organize-confirm {
+  margin-bottom: 4px;
+  font-weight: 400;
+  white-space: normal;
+  max-width: 220px;
+}
+
+.organize-confirm-delete,
+.organize-keep {
+  height: 24px;
+  padding: 0 8px;
+}
+
+.organize-add-btn {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px dashed var(--ch-brand);
+  border-radius: 12px;
+  color: var(--ch-brand);
+  background: transparent;
+}
+
+.organize-add-btn:hover {
+  background: var(--ch-brand-soft);
+}
+
+.organize-dialog .organize-inline {
+  width: 160px;
+  margin-bottom: 0;
+  padding: 3px 6px;
+}
+
+.organize-inline.is-invalid {
+  border-color: var(--ch-error);
+  animation: organize-shake 240ms ease;
+}
+
+@keyframes organize-shake {
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+.organize-table th.is-empty,
+.organize-table td.is-empty {
+  /* layered over the opaque cell colour so sticky cells stay opaque */
+  background:
+    linear-gradient(var(--ch-danger-soft, rgba(220, 80, 80, 0.12)), var(--ch-danger-soft, rgba(220, 80, 80, 0.12))),
+    var(--vscode-editorWidget-background, var(--ch-bg));
+}
+
+.organize-hint {
+  padding: 12px;
+  color: var(--ch-muted);
+}
+
+.organize-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.organize-dirty,
+.organize-discard {
+  color: var(--ch-muted);
+  white-space: nowrap;
+}
+
+.organize-discard {
+  color: var(--ch-fg);
+}
+
+.organize-error {
+  flex: 1;
+  color: var(--ch-error);
+  font-size: 12px;
+}
+
+.organize-footer .dialog-actions {
+  margin-left: auto;
+}
+
+.organize-footer button:disabled,
+.organize-dialog .dialog-title button:disabled,
+.organize-table button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ── session loading overlay ─────────────────────────────────────────────── */
 
 .session-loading {
