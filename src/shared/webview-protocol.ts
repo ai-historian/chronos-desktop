@@ -38,7 +38,14 @@ export interface ChronosSessionInfo {
   userName?: string;
 }
 
+export type UpdateStatus =
+  | { kind: "none" }
+  | { kind: "available"; version: string; mode: "install" | "notify" }
+  | { kind: "downloading"; version: string; percent: number }
+  | { kind: "ready"; version: string };
+
 export type ExtToWebview =
+  | { type: "update/status"; status: UpdateStatus }
   // app theme (CSS variables text applied by the renderer)
   | { type: "theme"; name: ThemeName; css: string }
   // chat / agent
@@ -122,6 +129,9 @@ export type ExtToWebview =
   | { type: "__test/dump" };
 
 export type WebviewToExt =
+  | { type: "update/download" }
+  | { type: "update/install" }
+  | { type: "update/openDownloadPage" }
   | { type: "ready" }
   | { type: "prompt"; text: string }
   | { type: "abort" }
