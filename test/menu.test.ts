@@ -9,7 +9,7 @@ const models = [
 ] as MenuState["models"];
 
 function mkActions(calls: string[] = []): MenuActions {
-  const names = ["newWorkspace", "openWorkspace", "importSources", "closeWorkspace", "newSession", "resumeSession", "restartAgent", "showPage", "login", "toggleYolo", "toggleTree", "toggleChat", "zoomIn", "zoomOut", "zoomReset", "openDocs", "openDiscord", "reportIssue", "showLogs", "about"];
+  const names = ["newWorkspace", "openWorkspace", "importSources", "closeWorkspace", "newSession", "resumeSession", "restartAgent", "showPage", "login", "toggleYolo", "toggleTree", "toggleChat", "zoomIn", "zoomOut", "zoomReset", "openDocs", "openDiscord", "reportIssue", "showLogs", "about", "checkForUpdates", "toggleUpdateCheck"];
   const a: any = {};
   for (const n of names) a[n] = () => calls.push(n);
   a.openRecent = (p: string) => calls.push(`openRecent:${p}`);
@@ -19,7 +19,7 @@ function mkActions(calls: string[] = []): MenuActions {
   return a;
 }
 
-const base: MenuState = { models, currentModel: "p2/b", thinking: "high", yolo: true, theme: "dark", hasWorkspace: true, recent: [{ path: "/w/one" }] };
+const base: MenuState = { models, currentModel: "p2/b", thinking: "high", yolo: true, theme: "dark", hasWorkspace: true, recent: [{ path: "/w/one" }], updateCheck: true, updatesSupported: true };
 const top = (m: Item[], label: string) => m.find((i) => i.label === label)!;
 const sub = (i: Item): Item[] => i.submenu as Item[];
 const item = (m: Item, label: string) => sub(m).find((i) => i.label === label)!;
@@ -107,6 +107,24 @@ test("accelerators and roles", () => {
   const roles = sub(top(m, "View")).map((i) => i.role).filter(Boolean);
   assert.deepEqual(roles, ["zoomIn", "zoomOut", "resetZoom", "toggleDevTools"]);
   assert.ok(sub(top(m, "File")).some((i) => i.role === "quit"));
+});
+
+test("help menu has the update items", () => {
+  const calls: string[] = [];
+  const help = top(buildMenu(mkActions(calls), base, "linux"), "Help");
+  assert.deepEqual(sub(help).map((i) => i.label ?? i.type), ["Documentation", "Discord", "Report issue", "separator", "Check for updates…", "Check for updates automatically", "separator", "Show logs", "About"]);
+  const auto = item(help, "Check for updates automatically");
+  assert.equal(auto.type, "checkbox");
+  assert.equal(auto.checked, true);
+  (item(help, "Check for updates…").click as any)();
+  (auto.click as any)();
+  assert.deepEqual(calls, ["checkForUpdates", "toggleUpdateCheck"]);
+});
+
+test("update items are disabled when updates are unsupported", () => {
+  const help = top(buildMenu(mkActions(), { ...base, updatesSupported: false }, "linux"), "Help");
+  assert.equal(item(help, "Check for updates…").enabled, false);
+  assert.equal(item(help, "Check for updates automatically").enabled, false);
 });
 
 test("session, help and theme clicks call actions", () => {

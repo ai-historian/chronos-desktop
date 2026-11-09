@@ -618,6 +618,8 @@ function menuActions(): MenuActions {
     openDiscord: open("https://discord.gg/VZmfCnqkvz"),
     reportIssue: open("https://github.com/ai-historian/chronos-desktop/issues/new"),
     showLogs,
+    checkForUpdates: () => {}, // replaced in Task 4 (update wiring)
+    toggleUpdateCheck: () => {}, // replaced in Task 4 (update wiring)
     about: () =>
       void dialog.showMessageBox({ type: "info", title: "About Chronos", message: "Chronos", detail: aboutText(), buttons: ["OK"] }),
   };
@@ -630,6 +632,8 @@ function rebuildMenu(): void {
     theme: themePref,
     hasWorkspace,
     recent: recent ? recent.list() : [],
+    updateCheck: true, // replaced in Task 4 (update wiring)
+    updatesSupported: false, // replaced in Task 4 (update wiring)
   };
   if (!hasWorkspace) Object.assign(state, { models: [], currentModel: undefined });
   const menu = buildMenu(menuActions(), state);

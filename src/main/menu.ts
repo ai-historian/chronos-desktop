@@ -26,6 +26,8 @@ export interface MenuActions {
   reportIssue(): void;
   showLogs(): void;
   about(): void;
+  checkForUpdates(): void;
+  toggleUpdateCheck(): void;
 }
 
 export interface MenuState {
@@ -36,6 +38,8 @@ export interface MenuState {
   theme: "system" | "light" | "dark";
   hasWorkspace: boolean;
   recent: { path: string }[];
+  updateCheck: boolean;
+  updatesSupported: boolean;
 }
 
 // pi clamps a level the current model lacks to the nearest supported one.
@@ -127,6 +131,15 @@ export function buildMenu(
         { label: "Documentation", click: () => a.openDocs() },
         { label: "Discord", click: () => a.openDiscord() },
         { label: "Report issue", click: () => a.reportIssue() },
+        { type: "separator" },
+        { label: "Check for updates…", enabled: s.updatesSupported, click: () => a.checkForUpdates() },
+        {
+          label: "Check for updates automatically",
+          type: "checkbox",
+          checked: s.updateCheck,
+          enabled: s.updatesSupported,
+          click: () => a.toggleUpdateCheck(),
+        },
         { type: "separator" },
         { label: "Show logs", click: () => a.showLogs() },
         { label: "About", click: () => a.about() },
