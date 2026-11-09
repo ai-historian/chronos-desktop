@@ -41,3 +41,7 @@ test("diffCollections emits delete, create, rename, setMembers in that order and
   });
   assert.deepEqual(diffCollections(after, after), { ops: [] });
 });
+
+test("slugifyCollectionId compares against taken ids case-insensitively", () => {
+  assert.equal(slugifyCollectionId("ffm", ["FFM"]), "ffm-2");
+});

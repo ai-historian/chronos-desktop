@@ -67,6 +67,11 @@ function isUserCommand(c: RpcSlashCommand): boolean {
   return !(c.source === "prompt" && c.sourceInfo?.origin === "package");
 }
 
+/** True when a batch result means something may have changed on disk. */
+export function shouldResync(result: CollectionApplyResult): boolean {
+  return result.ok || result.applied > 0;
+}
+
 export class AgentHost {
   private readonly workspaceDir: string;
   private readonly transport: Transport;
@@ -531,7 +536,7 @@ export class AgentHost {
       return { ok: false, error: "The agent is mid-answer; try again when it finishes.", applied: 0 };
     }
     const result = applyBatch(this.workspaceDir, batch);
-    if (!result.ok) return result;
+    if (!shouldResync(result)) return result;
     this.postCollections();
     if (!this.rpc?.isRunning) return result;
     const id = this.activeCollection?.id ?? null;
@@ -540,6 +545,7 @@ export class AgentHost {
     try {
       await this.rpc.request({ type: "prompt", message: `/select-collection ${stillThere ? id : "(all sources)"}` }, 0);
     } catch (e) {
+      if (!result.ok) return result; // partial failure: keep the original error
       const message = e instanceof Error ? e.message : String(e);
       return { ok: true, warning: `Saved, but the agent could not reload its catalogue: ${message}` };
     }

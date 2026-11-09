@@ -144,3 +144,48 @@ test("setMembers preserves the whole existing member object and rejects malforme
   if (!r.ok) assert.match(r.error, /setMembers 'ffm': invalid member/);
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("setMembers keeps out-of-tree member paths verbatim (relative and absolute) with their meta", () => {
+  const dir = ws();
+  mkdirSync(join(dir, "other", "B", "png"), { recursive: true });
+  writeFileSync(join(dir, "other", "B", "png", "page_0001.png"), "");
+  const outside = mkdtempSync(join(tmpdir(), "chronos-outside-"));
+  mkdirSync(join(outside, "png"));
+  writeFileSync(join(outside, "png", "page_0001.png"), "");
+  writeFileSync(join(dir, "collections", "oot.json"), JSON.stringify({ name: "O", members: [
+    { path: "other/B", meta: { y: 1 } }, { path: outside, meta: { y: 2 } },
+  ] }));
+  const rows = readSnapshot(dir).sources;
+  const relRow = rows.find((r) => r.outOfTree && r.path.endsWith("other/B"))!;
+  assert.ok(relRow);
+  const r = applyBatch(dir, { ops: [{ op: "setMembers", id: "oot", members: [
+    { path: relRow.path }, { path: outside }, { path: "sources/Frankfurt_1858" },
+  ] }] });
+  assert.deepEqual(r, { ok: true });
+  assert.deepEqual(manifest(dir, "oot").members, [
+    { path: "other/B", meta: { y: 1 } }, { path: outside, meta: { y: 2 } }, { path: "sources/Frankfurt_1858" },
+  ]);
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(outside, { recursive: true, force: true });
+});
+
+test("manifests with non-slug filenames can be renamed and do not block other ops", () => {
+  const dir = ws();
+  writeFileSync(join(dir, "collections", "FFM.json"), JSON.stringify({ name: "F", description: "d", members: [{ path: "sources/Frankfurt_1858" }] }));
+  const r = applyBatch(dir, { ops: [{ op: "rename", id: "FFM", name: "Frankfurt" }] });
+  assert.deepEqual(r, { ok: true });
+  assert.deepEqual(manifest(dir, "FFM"), { name: "Frankfurt", description: "d", members: [{ path: "sources/Frankfurt_1858" }] });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a collection whose members have no png/ counts as having no sources", () => {
+  const dir = ws();
+  mkdirSync(join(dir, "sources", "NoPng"), { recursive: true });
+  // NoPng is only a snapshot row because another manifest names it.
+  writeFileSync(join(dir, "collections", "other.json"), JSON.stringify({ name: "Other", members: [{ path: "sources/NoPng" }] }));
+  const r = applyBatch(dir, { ops: [{ op: "create", id: "np", name: "NP", members: [{ path: "sources/NoPng" }] }] });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.match(r.error, /create 'np': no sources/);
+  assert.equal(existsSync(join(dir, "collections", "np.json")), false);
+  rmSync(dir, { recursive: true, force: true });
+});

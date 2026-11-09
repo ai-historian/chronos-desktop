@@ -148,7 +148,9 @@ export class ChronosOrganizeDialog extends LitElement {
    * untouched empty manifest already on disk yields no op and does not block.
    */
   private blocksSave(col: DesiredCollection): boolean {
-    if (col.members.length > 0) return false;
+    // Members without pages don't count: the agent can't load them.
+    const withPages = new Set((this.snapshot?.sources ?? []).filter((r) => r.pageCount > 0).map((r) => r.path));
+    if (col.members.some((m) => withPages.has(m.path))) return false;
     const before = this.snapshot?.collections.find((c) => c.id === col.id);
     return !before || !sameMembers(before.members, col.members);
   }

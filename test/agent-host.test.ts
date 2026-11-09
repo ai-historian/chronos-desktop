@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentHost } from "../src/main/agent-host";
+import { AgentHost, shouldResync } from "../src/main/agent-host";
 import type { ExtToWebview } from "../src/shared/webview-protocol";
 
 // 1x1 transparent PNG
@@ -409,4 +409,10 @@ test("collections/apply always answers, even when the batch is malformed", async
     assert.ok(m && m.type === "collections/applied");
     assert.equal(m.result.ok, false);
   } finally { rmSync(ws, { recursive: true, force: true }); }
+});
+
+test("shouldResync is true for success and for a partial failure, false for a clean refusal", () => {
+  assert.equal(shouldResync({ ok: true }), true);
+  assert.equal(shouldResync({ ok: false, error: "x", applied: 2 }), true);
+  assert.equal(shouldResync({ ok: false, error: "x", applied: 0 }), false);
 });

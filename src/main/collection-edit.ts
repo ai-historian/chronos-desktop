@@ -91,14 +91,18 @@ export function readSnapshot(workspaceDir: string): CollectionSnapshot {
 const label = (op: CollectionOp) => `${op.op} '${op.id}'`;
 
 function validate(ws: string, batch: CollectionBatch): string | null {
-  const known = new Set(readSnapshot(ws).sources.map((s) => s.path));
+  const rows = readSnapshot(ws).sources;
+  const known = new Set(rows.map((s) => s.path));
+  // The agent's loadCollection drops members without pages; a collection needs at least one.
+  const loadable = new Set(rows.filter((s) => s.pageCount > 0).map((s) => s.path));
   const stems = manifestStems(ws);
   // Case-insensitive: on APFS/NTFS `ffm.json` and `FFM.json` are the same file.
   const onDisk = new Set(stems.map((id) => id.toLowerCase()));
   const parseable = new Set(stems.filter((id) => readManifest(manifestFile(ws, id))));
   for (const op of batch.ops) {
-    if (typeof op.id !== "string" || !COLLECTION_ID_RE.test(op.id)) return `${label(op)}: invalid id`;
+    if (typeof op.id !== "string") return `${label(op)}: invalid id`;
     if (op.op === "create") {
+      if (!COLLECTION_ID_RE.test(op.id)) return `${label(op)}: invalid id`;
       if (onDisk.has(op.id.toLowerCase())) return `${label(op)}: already exists`;
     } else if (!parseable.has(op.id)) {
       return `${label(op)}: not found`;
@@ -112,6 +116,7 @@ function validate(ws: string, batch: CollectionBatch): string | null {
         if (typeof m?.path !== "string") return `${label(op)}: invalid member`;
         if (!known.has(m.path)) return `${label(op)}: unknown source ${m.path}`;
       }
+      if (!op.members.some((m) => loadable.has(m.path))) return `${label(op)}: no sources`;
     }
     // Track the batch's own effect so later ops see earlier creates/deletes.
     if (op.op === "create") { onDisk.add(op.id.toLowerCase()); parseable.add(op.id); }
@@ -143,7 +148,9 @@ function buildMembers(ws: string, members: MemberRef[], existing: unknown): unkn
   }
   return members.map((m) => {
     const prev = byAbs.get(normalizeMemberPath(ws, m.path).abs);
-    const out: Record<string, unknown> = { ...prev, path: m.path };
+    // An existing out-of-tree member keeps its manifest spelling (relative or absolute) verbatim.
+    const keepPrevPath = prev && normalizeMemberPath(ws, m.path).outOfTree;
+    const out: Record<string, unknown> = keepPrevPath ? { ...prev } : { ...prev, path: m.path };
     if (m.ref) out.ref = m.ref;
     return out;
   });

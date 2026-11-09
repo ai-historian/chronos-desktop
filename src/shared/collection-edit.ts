@@ -65,7 +65,7 @@ export function slugifyCollectionId(name: string, taken: Iterable<string>): stri
       .toLowerCase()
       .replace(/[^a-z0-9_-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "collection";
-  const used = new Set(taken);
+  const used = new Set([...taken].map((t) => t.toLowerCase()));
   let candidate = base;
   for (let n = 2; used.has(candidate); n++) candidate = `${base}-${n}`;
   return candidate;
