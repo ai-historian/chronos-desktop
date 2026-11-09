@@ -92,12 +92,14 @@ const label = (op: CollectionOp) => `${op.op} '${op.id}'`;
 
 function validate(ws: string, batch: CollectionBatch): string | null {
   const known = new Set(readSnapshot(ws).sources.map((s) => s.path));
-  const onDisk = new Set(manifestStems(ws));
-  const parseable = new Set([...onDisk].filter((id) => readManifest(manifestFile(ws, id))));
+  const stems = manifestStems(ws);
+  // Case-insensitive: on APFS/NTFS `ffm.json` and `FFM.json` are the same file.
+  const onDisk = new Set(stems.map((id) => id.toLowerCase()));
+  const parseable = new Set(stems.filter((id) => readManifest(manifestFile(ws, id))));
   for (const op of batch.ops) {
     if (typeof op.id !== "string" || !COLLECTION_ID_RE.test(op.id)) return `${label(op)}: invalid id`;
     if (op.op === "create") {
-      if (onDisk.has(op.id)) return `${label(op)}: already exists`;
+      if (onDisk.has(op.id.toLowerCase())) return `${label(op)}: already exists`;
     } else if (!parseable.has(op.id)) {
       return `${label(op)}: not found`;
     }
@@ -107,12 +109,13 @@ function validate(ws: string, batch: CollectionBatch): string | null {
     if (op.op === "create" || op.op === "setMembers") {
       if (!op.members?.length) return `${label(op)}: no sources`;
       for (const m of op.members) {
+        if (typeof m?.path !== "string") return `${label(op)}: invalid member`;
         if (!known.has(m.path)) return `${label(op)}: unknown source ${m.path}`;
       }
     }
     // Track the batch's own effect so later ops see earlier creates/deletes.
-    if (op.op === "create") { onDisk.add(op.id); parseable.add(op.id); }
-    if (op.op === "delete") { onDisk.delete(op.id); parseable.delete(op.id); }
+    if (op.op === "create") { onDisk.add(op.id.toLowerCase()); parseable.add(op.id); }
+    if (op.op === "delete") { onDisk.delete(op.id.toLowerCase()); parseable.delete(op.id); }
   }
   return null;
 }
@@ -121,23 +124,27 @@ function writeManifest(ws: string, id: string, m: unknown): void {
   mkdirSync(collectionsDir(ws), { recursive: true });
   const file = manifestFile(ws, id);
   const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify(m, null, 2) + "\n");
-  renameSync(tmp, file);
+  try {
+    writeFileSync(tmp, JSON.stringify(m, null, 2) + "\n");
+    renameSync(tmp, file);
+  } catch (e) {
+    try { unlinkSync(tmp); } catch { /* best effort */ }
+    throw e;
+  }
 }
 
 function buildMembers(ws: string, members: MemberRef[], existing: unknown): unknown[] {
-  const metaByAbs = new Map<string, unknown>();
+  // Carry over the whole existing member object (ref, meta, unknown keys).
+  const byAbs = new Map<string, Record<string, unknown>>();
   for (const e of Array.isArray(existing) ? existing : []) {
-    if (e && typeof e.path === "string" && e.meta !== undefined) {
-      metaByAbs.set(normalizeMemberPath(ws, e.path).abs, e.meta);
+    if (e && typeof e === "object" && typeof e.path === "string") {
+      byAbs.set(normalizeMemberPath(ws, e.path).abs, e);
     }
   }
   return members.map((m) => {
-    const out: Record<string, unknown> = {};
+    const prev = byAbs.get(normalizeMemberPath(ws, m.path).abs);
+    const out: Record<string, unknown> = { ...prev, path: m.path };
     if (m.ref) out.ref = m.ref;
-    out.path = m.path;
-    const meta = metaByAbs.get(normalizeMemberPath(ws, m.path).abs);
-    if (meta !== undefined) out.meta = meta;
     return out;
   });
 }
@@ -147,7 +154,11 @@ function applyOp(ws: string, op: CollectionOp): void {
     unlinkSync(manifestFile(ws, op.id));
     return;
   }
-  const m = op.op === "create" ? {} : readManifest(manifestFile(ws, op.id)) ?? {};
+  let m: any = {};
+  if (op.op !== "create") {
+    m = readManifest(manifestFile(ws, op.id));
+    if (!m) throw new Error("manifest changed on disk or is unreadable");
+  }
   if (op.op === "create" || op.op === "rename") m.name = op.name.trim();
   if (op.op === "create" || op.op === "setMembers") m.members = buildMembers(ws, op.members, m.members);
   writeManifest(ws, op.id, m);

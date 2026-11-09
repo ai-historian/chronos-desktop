@@ -112,3 +112,35 @@ test("in-tree members without png/ are still snapshot rows and can be kept by se
   assert.deepEqual(manifest(dir, "np").members, [{ path: "sources/NoPng" }, { path: "sources/Frankfurt_1858" }]);
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("create is rejected when a differently-cased manifest exists (case-insensitive filesystems)", () => {
+  const dir = ws();
+  writeFileSync(join(dir, "collections", "FFM.json"), JSON.stringify({ name: "F", members: [{ path: "sources/Frankfurt_1858" }] }));
+  const r = applyBatch(dir, { ops: [{ op: "create", id: "ffm", name: "x", members: [{ path: "sources/Frankfurt_1858" }] }] });
+  assert.equal(r.ok, false);
+  if (!r.ok) { assert.match(r.error, /create 'ffm': already exists/); assert.equal(r.applied, 0); }
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a failing write mid-batch reports applied count and the op, without clobbering", () => {
+  const dir = ws();
+  for (const id of ["a", "b"]) writeFileSync(join(dir, "collections", `${id}.json`), JSON.stringify({ name: id, description: "d", members: [{ path: "sources/Frankfurt_1858" }] }));
+  mkdirSync(join(dir, "collections", "b.json.tmp")); // makes the write for 'b' fail
+  const r = applyBatch(dir, { ops: [{ op: "rename", id: "a", name: "A2" }, { op: "rename", id: "b", name: "B2" }] });
+  assert.equal(r.ok, false);
+  if (!r.ok) { assert.equal(r.applied, 1); assert.match(r.error, /rename 'b'/); }
+  assert.equal(manifest(dir, "a").name, "A2");
+  assert.equal(manifest(dir, "b").name, "b");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("setMembers preserves the whole existing member object and rejects malformed members", () => {
+  const dir = ws();
+  writeFileSync(join(dir, "collections", "ffm.json"), JSON.stringify({ name: "F", members: [{ ref: "Frankfurt_1858", path: "sources/Frankfurt_1858", note: "x", meta: { year: 1858 } }] }));
+  assert.deepEqual(applyBatch(dir, { ops: [{ op: "setMembers", id: "ffm", members: [{ path: "sources/wills/box-3" }, { path: "sources/Frankfurt_1858" }] }] }), { ok: true });
+  assert.deepEqual(manifest(dir, "ffm").members[1], { ref: "Frankfurt_1858", path: "sources/Frankfurt_1858", note: "x", meta: { year: 1858 } });
+  const r = applyBatch(dir, { ops: [{ op: "setMembers", id: "ffm", members: [null as any] }] });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.match(r.error, /setMembers 'ffm': invalid member/);
+  rmSync(dir, { recursive: true, force: true });
+});
