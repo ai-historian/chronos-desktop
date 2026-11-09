@@ -41,6 +41,10 @@ linux:
   icon: resources/icon.png
   maintainer: Lorenz Hufe <lorenz.hufe@posteo.de>
 
+# Version-free so an in-place update keeps the file name (users' launchers keep working).
+appImage:
+  artifactName: "${productName}.${ext}"
+
 deb:
   packageName: chronos
   artifactName: "chronos_${version}_${arch}.${ext}"

@@ -15,7 +15,6 @@ import { appLogPath, installAppLog } from "./app-log";
 import { buildMenu, type MenuActions, type MenuState } from "./menu";
 import { ensurePiDefaultModel, rememberModelChoice } from "./pi-settings";
 import { readAppSettings, writeAppSettings, type AppSettings } from "./app-settings";
-import { autoUpdater } from "electron-updater";
 import { UpdateHost, updateMode, readyText, DOWNLOAD_PAGE, type ManualResult, type UpdateMode, type UpdaterLike } from "./update-host";
 import {
   findIncompleteImports,
@@ -388,22 +387,45 @@ function manualResultText(r: ManualResult): string {
   return `Update check failed: ${r.message}`;
 }
 
+/** Welcome-window answer to a manual check (the main window shows a toast instead). */
+async function showManualResult(r: ManualResult): Promise<void> {
+  const buttons = r.kind === "available" ? ["Open download page", "OK"] : ["OK"];
+  const { response } = await dialog.showMessageBox({
+    type: r.kind === "error" ? "warning" : "info",
+    title: "Chronos updates",
+    message: manualResultText(r),
+    buttons,
+    defaultId: 0,
+  });
+  if (r.kind === "available" && response === 0) void shell.openExternal(DOWNLOAD_PAGE);
+}
+
 function startUpdates(): void {
   updateModeValue = updateMode({ platform: process.platform, isPackaged: app.isPackaged, env: process.env });
   if (updateModeValue === "off") return;
-  autoUpdater.logger = null;
+  // Loaded only when updates are on, so a missing module disables updates instead of startup.
+  let autoUpdater: typeof import("electron-updater").autoUpdater;
+  try {
+    autoUpdater = (require("electron-updater") as typeof import("electron-updater")).autoUpdater;
+  } catch (e) {
+    console.error("[update] electron-updater unavailable, updates are off:", e);
+    updateModeValue = "off";
+    return;
+  }
+  // electron-updater's own download/install log goes to the app log too.
+  const updaterLog = (...args: unknown[]) => console.log("[update] " + args.map(String).join(" "));
+  autoUpdater.logger = { info: updaterLog, warn: updaterLog, error: updaterLog, debug: updaterLog };
   updateHost = new UpdateHost({
     updater: autoUpdater as unknown as UpdaterLike, // electron-updater's typed `on` overloads differ from UpdaterLike's
     mode: updateModeValue,
     currentVersion: app.getVersion(),
     post: sendToMain,
     openExternal: (u) => void shell.openExternal(u),
-    log: (line) => console.log("[update] " + line),
+    // UpdateHost already prefixes its lines with "[update] ".
+    log: (line) => console.log(line),
     requestQuit: () => app.quit(),
     onManualResult: (r) => {
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        void dialog.showMessageBox({ type: r.kind === "error" ? "warning" : "info", title: "Chronos updates", message: manualResultText(r) });
-      }
+      if (!mainWindow || mainWindow.isDestroyed()) void showManualResult(r);
     },
   });
   if (settings.checkForUpdates) setTimeout(() => void updateHost?.check({ manual: false }), 15_000);
