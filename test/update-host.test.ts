@@ -117,7 +117,7 @@ test("available posts a banner status (install mode)", async () => {
   updater.emit("update-available", { version: "0.4.0" });
   updater.checkResult!.resolve();
   await p;
-  assert.deepEqual(posted[0], { type: "update/status", status: { kind: "available", version: "0.4.0", mode: "install" } });
+  assert.deepEqual(posted[0], { type: "update/status", status: { kind: "available", version: "0.4.0", mode: "install" }, dismissed: false });
   assert.deepEqual(host.status, { kind: "available", version: "0.4.0", mode: "install" });
 });
 
@@ -202,7 +202,7 @@ test("download error returns to available and warns", async () => {
   s.updater.downloadResult!.reject(new Error("disk full"));
   await tick();
   assert.deepEqual(s.posted.slice(1), [
-    { type: "update/status", status: { kind: "available", version: "0.4.0", mode: "install" } },
+    { type: "update/status", status: { kind: "available", version: "0.4.0", mode: "install" }, dismissed: false },
     { type: "notify", level: "warning", message: "Update download failed: disk full" },
   ]);
   assert.equal(s.posted.filter((m) => m.type === "notify").length, 1);
@@ -304,10 +304,10 @@ test("finishInstall without a request installs nothing", async () => {
 test("repost re-sends the current status", async () => {
   const s = setup();
   s.host.repost();
-  assert.deepEqual(s.posted, [{ type: "update/status", status: { kind: "none" } }]);
+  assert.deepEqual(s.posted, [{ type: "update/status", status: { kind: "none" }, dismissed: false }]);
   await toAvailable(s);
   s.host.repost();
-  assert.deepEqual(s.posted, [{ type: "update/status", status: { kind: "available", version: "0.4.0", mode: "install" } }]);
+  assert.deepEqual(s.posted, [{ type: "update/status", status: { kind: "available", version: "0.4.0", mode: "install" }, dismissed: false }]);
 });
 
 test("handleWebviewMessage consumes only update messages", async () => {
@@ -328,8 +328,69 @@ test("check is ignored once an update is ready", async () => {
   await toAvailable(s);
   s.host.download();
   s.updater.emit("update-downloaded", { version: "0.4.0" });
-  await s.host.check({ manual: true });
+  await s.host.check({ manual: false });
   assert.equal(s.updater.checkCalls, 1);
   s.updater.emit("update-available", { version: "0.4.0" });
   assert.deepEqual(s.host.status, { kind: "ready", version: "0.4.0" });
+});
+
+test("manual check while ready answers without checking", async () => {
+  const s = setup();
+  await toReady(s);
+  await s.host.check({ manual: true });
+  assert.equal(s.updater.checkCalls, 1);
+  assert.deepEqual(s.posted, [{ type: "notify", level: "info", message: "Chronos 0.4.0 is ready. It installs when you quit Chronos." }]);
+  assert.deepEqual(s.results, [{ kind: "ready", version: "0.4.0" }]);
+});
+
+test("automatic check while ready stays silent", async () => {
+  const s = setup();
+  await toReady(s);
+  await s.host.check({ manual: false });
+  assert.equal(s.posted.length, 0);
+  assert.equal(s.results.length, 0);
+});
+
+test("dismissal is kept by the host: repost carries dismissed until another version", async () => {
+  const s = setup();
+  await toAvailable(s);
+  assert.equal(s.host.handleWebviewMessage({ type: "update/dismiss", kind: "available", version: "0.4.0" }), true);
+  s.host.repost();
+  assert.deepEqual(s.posted, [{ type: "update/status", status: { kind: "available", version: "0.4.0", mode: "install" }, dismissed: true }]);
+  // A different stage of the same version is not dismissed.
+  s.host.download();
+  s.updater.emit("update-downloaded", { version: "0.4.0" });
+  assert.deepEqual(s.posted.at(-1), { type: "update/status", status: { kind: "ready", version: "0.4.0" }, dismissed: false });
+  // Neither is a new version.
+  const t = setup();
+  await toAvailable(t);
+  t.host.handleWebviewMessage({ type: "update/dismiss", kind: "available", version: "0.4.0" });
+  const p = t.host.check({ manual: false });
+  t.updater.emit("update-available", { version: "0.5.0" });
+  t.updater.checkResult!.resolve();
+  await p;
+  assert.deepEqual(t.posted.at(-1), { type: "update/status", status: { kind: "available", version: "0.5.0", mode: "install" }, dismissed: false });
+});
+
+test("automatic re-check keeps a dismissed banner hidden", async () => {
+  const s = setup();
+  await toAvailable(s);
+  s.host.handleWebviewMessage({ type: "update/dismiss", kind: "available", version: "0.4.0" });
+  const p = s.host.check({ manual: false });
+  s.updater.emit("update-available", { version: "0.4.0" });
+  s.updater.checkResult!.resolve();
+  await p;
+  assert.equal((s.posted.at(-1) as any).dismissed, true);
+});
+
+test("manual check brings a dismissed available banner back", async () => {
+  const s = setup();
+  await toAvailable(s);
+  s.host.handleWebviewMessage({ type: "update/dismiss", kind: "available", version: "0.4.0" });
+  const p = s.host.check({ manual: true });
+  s.updater.emit("update-available", { version: "0.4.0" });
+  s.updater.checkResult!.resolve();
+  await p;
+  assert.deepEqual(s.posted, [{ type: "update/status", status: { kind: "available", version: "0.4.0", mode: "install" }, dismissed: false }]);
+  assert.deepEqual(s.results, [{ kind: "available", version: "0.4.0" }]);
 });

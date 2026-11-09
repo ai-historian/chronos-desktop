@@ -8,6 +8,9 @@ import type { ExtToWebview, UpdateStatus, WebviewToExt } from "../shared/webview
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+/** Answer to a manual check once an update is downloaded (toast and welcome-window dialog). */
+export const readyText = (version: string): string => `Chronos ${version} is ready. It installs when you quit Chronos.`;
+
 export const DOWNLOAD_PAGE = "https://hufe.info/chronos/";
 export type UpdateMode = "install" | "notify" | "off";
 
@@ -67,6 +70,7 @@ export interface UpdaterLike {
 export type ManualResult =
   | { kind: "upToDate"; version: string }
   | { kind: "available"; version: string }
+  | { kind: "ready"; version: string }
   | { kind: "error"; message: string };
 
 export interface UpdateHostOptions {
@@ -88,6 +92,8 @@ export class UpdateHost {
   private manual = false;
   /** "Restart to update" was clicked; install once every window has closed. */
   private installRequested = false;
+  /** `${kind}:${version}` of the banner the user hid (✕ / Later), until the next launch. */
+  private dismissedKey: string | null = null;
 
   constructor(o: UpdateHostOptions) {
     this.o = o;
@@ -126,7 +132,18 @@ export class UpdateHost {
   }
 
   async check(o: { manual: boolean }): Promise<void> {
-    if (this.phase !== "idle" || this._status.kind === "ready") return;
+    if (this.phase !== "idle") return;
+    if (this._status.kind === "ready") {
+      // Nothing to fetch, but a manual check still answers.
+      if (o.manual) {
+        const version = this._status.version;
+        this.o.post({ type: "notify", level: "info", message: readyText(version) });
+        this.o.onManualResult?.({ kind: "ready", version });
+      }
+      return;
+    }
+    // Asking again brings a dismissed banner back.
+    if (o.manual) this.dismissedKey = null;
     this.phase = "checking";
     this.manual = o.manual;
     try {
@@ -173,7 +190,9 @@ export class UpdateHost {
   }
 
   repost(): void {
-    this.o.post({ type: "update/status", status: this._status });
+    const s = this._status;
+    const dismissed = (s.kind === "available" || s.kind === "ready") && this.dismissedKey === `${s.kind}:${s.version}`;
+    this.o.post({ type: "update/status", status: s, dismissed });
   }
 
   handleWebviewMessage(msg: WebviewToExt): boolean {
@@ -186,6 +205,9 @@ export class UpdateHost {
         return true;
       case "update/openDownloadPage":
         this.openDownloadPage();
+        return true;
+      case "update/dismiss":
+        this.dismissedKey = `${msg.kind}:${msg.version}`;
         return true;
       default:
         return false;

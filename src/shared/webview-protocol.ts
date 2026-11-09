@@ -45,7 +45,8 @@ export type UpdateStatus =
   | { kind: "ready"; version: string };
 
 export type ExtToWebview =
-  | { type: "update/status"; status: UpdateStatus }
+  // dismissed: the user hid the banner for this stage and version (kept by main until the next launch)
+  | { type: "update/status"; status: UpdateStatus; dismissed: boolean }
   // app theme (CSS variables text applied by the renderer)
   | { type: "theme"; name: ThemeName; css: string }
   // chat / agent
@@ -132,6 +133,7 @@ export type WebviewToExt =
   | { type: "update/download" }
   | { type: "update/install" }
   | { type: "update/openDownloadPage" }
+  | { type: "update/dismiss"; kind: "available" | "ready"; version: string }
   | { type: "ready" }
   | { type: "prompt"; text: string }
   | { type: "abort" }

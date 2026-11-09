@@ -57,6 +57,14 @@ interface Toast {
   message: string;
 }
 
+/**
+ * Dismissal is per stage ("available:1.2.3" vs "ready:1.2.3"): a downloaded update
+ * that is ready to install resurfaces even if its "available" banner was hidden.
+ */
+function updateKey(u: UpdateStatus): string | null {
+  return u.kind === "available" || u.kind === "ready" ? `${u.kind}:${u.version}` : null;
+}
+
 export class ChronosApp extends LitElement {
   static properties = {
     state: { state: true },
@@ -292,6 +300,8 @@ export class ChronosApp extends LitElement {
         break;
       case "update/status":
         this.updateStatus = msg.status;
+        // Main keeps the dismissal, so a reloaded renderer keeps the banner hidden.
+        this.updateDismissed = msg.dismissed ? updateKey(msg.status) : null;
         break;
       case "loginRequired":
         this.loginRequired = msg.required;
@@ -1129,11 +1139,12 @@ export class ChronosApp extends LitElement {
   private renderUpdateBanner(): TemplateResult | typeof nothing {
     const u = this.updateStatus;
     if (u.kind === "none") return nothing;
-    // Dismissal is per stage ("available:1.2.3" vs "ready:1.2.3"): a downloaded update
-    // that is ready to install should resurface even if its "available" banner was hidden.
-    const key = u.kind === "available" || u.kind === "ready" ? `${u.kind}:${u.version}` : null;
+    const key = updateKey(u);
     if (key && this.updateDismissed === key) return nothing;
-    const dismiss = () => { this.updateDismissed = key; };
+    const dismiss = () => {
+      this.updateDismissed = key;
+      if (u.kind === "available" || u.kind === "ready") this.postMessage({ type: "update/dismiss", kind: u.kind, version: u.version });
+    };
     const send = (type: "update/download" | "update/install" | "update/openDownloadPage") => this.postMessage({ type });
     let text: TemplateResult;
     let buttons: TemplateResult | typeof nothing = nothing;

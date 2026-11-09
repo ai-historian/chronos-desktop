@@ -118,14 +118,41 @@ test("Organize sources: create a collection, tick a source, save", async () => {
   await expect(page.locator("#app-header select.control-select option", { hasText: "Parish Books" })).toHaveCount(1);
 });
 
-test("update banner: available → dismiss; ready → restart posts update/install", async () => {
+test("update banner: ✕ posts update/dismiss; a dismissed status stays hidden; Restart posts update/install", async () => {
+  // Record what the renderer posts to main (main has no UpdateHost under CHRONOS_E2E).
+  await page.evaluate(() => {
+    const el = (globalThis as any).document.querySelector("chronos-app");
+    const orig = el.postMessage;
+    el.__posted = [];
+    el.postMessage = (m: unknown) => {
+      el.__posted.push(m);
+      orig(m);
+    };
+  });
+  const posted = () => page.evaluate(() => (globalThis as any).document.querySelector("chronos-app").__posted as any[]);
+  const status = (s: unknown, dismissed: boolean) =>
+    page.evaluate(([s, dismissed]) => (globalThis as any).document.querySelector("chronos-app").handleMessage({ type: "update/status", status: s, dismissed }), [s, dismissed] as const);
+  const banner = page.locator(".update-banner");
+
   await invoke(page, "updateStatus", { kind: "available", version: "9.9.9", mode: "install" });
-  await expect(page.locator(".update-banner")).toContainText("Chronos 9.9.9 is available.");
+  await expect(banner).toContainText("Chronos 9.9.9 is available.");
   await page.locator(".update-banner button", { hasText: "✕" }).click();
-  await expect(page.locator(".update-banner")).toHaveCount(0);
-  await invoke(page, "updateStatus", { kind: "ready", version: "9.9.9" });
-  await expect(page.locator(".update-banner")).toContainText("Chronos 9.9.9 is ready.");
+  await expect(banner).toHaveCount(0);
+  expect(await posted()).toContainEqual({ type: "update/dismiss", kind: "available", version: "9.9.9" });
+
+  // What a reloaded renderer receives from main: the status with dismissed set.
+  await status({ kind: "available", version: "9.9.9", mode: "install" }, true);
+  await expect(banner).toHaveCount(0);
+  await status({ kind: "available", version: "9.9.9", mode: "install" }, false);
+  await expect(banner).toContainText("Chronos 9.9.9 is available.");
+
+  await status({ kind: "ready", version: "9.9.9" }, false);
+  await expect(banner).toContainText("Chronos 9.9.9 is ready.");
   expect((await testState(page)).update).toBe("ready");
+  await page.locator(".update-banner button", { hasText: "Restart to update" }).click();
+  expect(await posted()).toContainEqual({ type: "update/install" });
+  await status({ kind: "none" }, false);
+  await expect(banner).toHaveCount(0);
 });
 
 test("no CSP violations, failed loads or page errors", async () => {

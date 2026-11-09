@@ -16,7 +16,7 @@ import { buildMenu, type MenuActions, type MenuState } from "./menu";
 import { ensurePiDefaultModel, rememberModelChoice } from "./pi-settings";
 import { readAppSettings, writeAppSettings, type AppSettings } from "./app-settings";
 import { autoUpdater } from "electron-updater";
-import { UpdateHost, updateMode, DOWNLOAD_PAGE, type ManualResult, type UpdateMode, type UpdaterLike } from "./update-host";
+import { UpdateHost, updateMode, readyText, DOWNLOAD_PAGE, type ManualResult, type UpdateMode, type UpdaterLike } from "./update-host";
 import {
   findIncompleteImports,
   importFiles,
@@ -384,6 +384,7 @@ function setThemePref(t: "system" | ThemeName): void {
 function manualResultText(r: ManualResult): string {
   if (r.kind === "upToDate") return `Chronos ${r.version} is up to date.`;
   if (r.kind === "available") return `Chronos ${r.version} is available. Download it from ${DOWNLOAD_PAGE}`;
+  if (r.kind === "ready") return readyText(r.version);
   return `Update check failed: ${r.message}`;
 }
 
