@@ -2,6 +2,7 @@ import { LitElement, html, nothing, type PropertyValues, type TemplateResult } f
 import type { WebviewToExt } from "../../shared/webview-protocol";
 import {
   diffCollections,
+  sameMembers,
   slugifyCollectionId,
   type CollectionApplyResult,
   type CollectionBatch,
@@ -14,6 +15,8 @@ import {
 // It edits a desired end state locally and, on Save, sends the diff against
 // the host's snapshot as one batch. Nothing touches disk until Save. Light DOM
 // so the app stylesheet applies.
+
+const FINISH_EDIT_FIRST = "Finish or cancel the edit first";
 
 type Editing = { kind: "new" } | { kind: "rename"; id: string } | { kind: "delete"; id: string } | null;
 
@@ -28,6 +31,7 @@ export class ChronosOrganizeDialog extends LitElement {
     saving: { state: true },
     footerError: { state: true },
     showEmpty: { state: true },
+    awaitingSnapshot: { state: true },
   };
 
   declare snapshot: CollectionSnapshot | null;
@@ -41,12 +45,18 @@ export class ChronosOrganizeDialog extends LitElement {
   declare footerError: string;
   /** A Save was refused for empty collections: highlight the ones still empty. */
   declare showEmpty: boolean;
+  /** A partial failure re-requested the snapshot: Save waits for it so landed ops are not re-sent. */
+  declare awaitingSnapshot: boolean;
 
   /** Set by the parent: posts a message to the main process. */
   post: (msg: WebviewToExt) => void = () => {};
 
-  /** `desired` is seeded from the first snapshot only; later ones (after a partial failure) keep it. */
-  private seeded = false;
+  /**
+   * Collection ids in the first snapshot, which seeds `desired`. Later snapshots
+   * (after a partial failure) keep `desired`, adding only collections created
+   * on disk meanwhile; ids in here the user deleted are not brought back.
+   */
+  private originalIds: Set<string> | null = null;
 
   constructor() {
     super();
@@ -59,6 +69,7 @@ export class ChronosOrganizeDialog extends LitElement {
     this.saving = false;
     this.footerError = "";
     this.showEmpty = false;
+    this.awaitingSnapshot = false;
   }
 
   protected createRenderRoot(): HTMLElement {
@@ -74,10 +85,21 @@ export class ChronosOrganizeDialog extends LitElement {
   }
 
   protected willUpdate(changed: PropertyValues<this>): void {
-    if (changed.has("snapshot") && this.snapshot && !this.seeded) {
-      this.seeded = true;
-      this.desired = this.snapshot.collections.map((c) => ({ ...c, members: [...c.members] }));
+    if (changed.has("snapshot") && this.snapshot) {
+      const copy = (c: DesiredCollection) => ({ ...c, members: [...c.members] });
+      if (!this.originalIds) {
+        this.originalIds = new Set(this.snapshot.collections.map((c) => c.id));
+        this.desired = this.snapshot.collections.map(copy);
+      } else {
+        const original = this.originalIds;
+        const outsiders = this.snapshot.collections.filter(
+          (c) => !original.has(c.id) && !this.desired.some((d) => d.id === c.id),
+        );
+        if (outsiders.length) this.desired = [...this.desired, ...outsiders.map(copy)];
+      }
+      this.awaitingSnapshot = false;
     }
+    if (changed.has("editing") && !this.editing && this.footerError === FINISH_EDIT_FIRST) this.footerError = "";
     if (changed.has("result") && this.result) this.onResult(this.result);
   }
 
@@ -101,7 +123,10 @@ export class ChronosOrganizeDialog extends LitElement {
     this.saving = false;
     this.footerError = result.error;
     // Some ops landed: diff the next Save against what is on disk now.
-    if (result.applied > 0) this.post({ type: "collections/plan" });
+    if (result.applied > 0) {
+      this.awaitingSnapshot = true;
+      this.post({ type: "collections/plan" });
+    }
   }
 
   private close(): void {
@@ -118,9 +143,23 @@ export class ChronosOrganizeDialog extends LitElement {
     this.close();
   }
 
+  /**
+   * An empty collection the Save would write (new, or members changed). An
+   * untouched empty manifest already on disk yields no op and does not block.
+   */
+  private blocksSave(col: DesiredCollection): boolean {
+    if (col.members.length > 0) return false;
+    const before = this.snapshot?.collections.find((c) => c.id === col.id);
+    return !before || !sameMembers(before.members, col.members);
+  }
+
   private save(): void {
-    if (this.saving || this.changeCount === 0) return;
-    const empty = this.desired.find((c) => c.members.length === 0);
+    if (this.saving || this.awaitingSnapshot || this.changeCount === 0) return;
+    if (this.editing) {
+      this.footerError = FINISH_EDIT_FIRST;
+      return;
+    }
+    const empty = this.desired.find((c) => this.blocksSave(c));
     if (empty) {
       this.showEmpty = true;
       this.footerError = `'${empty.name}' has no sources: tick one or delete it`;
@@ -153,7 +192,7 @@ export class ChronosOrganizeDialog extends LitElement {
 
   /** Drop the empty-collection refusal once no collection is empty any more. */
   private clearResolvedEmptyError(): void {
-    if (this.showEmpty && !this.desired.some((c) => c.members.length === 0)) {
+    if (this.showEmpty && !this.desired.some((c) => this.blocksSave(c))) {
       this.showEmpty = false;
       this.footerError = "";
     }
@@ -207,8 +246,9 @@ export class ChronosOrganizeDialog extends LitElement {
   }
 
   private onKeydown(e: KeyboardEvent): void {
-    if (e.key !== "Escape") return;
+    // Keep every key inside the modal: #app-root forwards keys to the page viewer.
     e.stopPropagation();
+    if (e.key !== "Escape") return;
     if (this.editing) this.editing = null;
     else if (this.confirmDiscard) this.confirmDiscard = false;
     else this.requestClose();
@@ -231,7 +271,7 @@ export class ChronosOrganizeDialog extends LitElement {
   }
 
   private isEmptyCol(col: DesiredCollection): boolean {
-    return this.showEmpty && col.members.length === 0;
+    return this.showEmpty && this.blocksSave(col);
   }
 
   private renderColHeader(col: DesiredCollection): TemplateResult {
@@ -331,7 +371,7 @@ export class ChronosOrganizeDialog extends LitElement {
       <span class="organize-error" role="alert">${this.footerError}</span>
       <div class="dialog-actions">
         <button class="btn-secondary organize-cancel" ?disabled=${this.saving} @click=${this.requestClose}>Cancel</button>
-        <button class="btn-send organize-save" ?disabled=${n === 0 || this.saving} @click=${this.save}>Save</button>
+        <button class="btn-send organize-save" ?disabled=${n === 0 || this.saving || this.awaitingSnapshot} @click=${this.save}>Save</button>
       </div>
     </div>`;
   }
