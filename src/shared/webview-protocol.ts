@@ -13,6 +13,7 @@ import type {
   ThinkingLevel,
 } from "../main/rpc/rpc-types";
 import type { TreeEntry } from "../renderer/tree-model";
+import type { CollectionApplyResult, CollectionBatch, CollectionSnapshot } from "./collection-edit";
 
 export type { TreeEntry };
 
@@ -66,6 +67,10 @@ export type ExtToWebview =
       // Active collection id; null = the auto "all sources" collection.
       active: string | null;
     }
+  // reply to collections/plan: sources on disk + current manifests, for the organize dialog
+  | { type: "collections/snapshot"; snapshot: CollectionSnapshot }
+  // reply to collections/apply
+  | { type: "collections/applied"; result: CollectionApplyResult }
   | { type: "sessions"; sessions: ChronosSessionInfo[] }
   | { type: "resumeResult"; ok: boolean }
   // auth: no models are available until the user connects a provider
@@ -135,6 +140,10 @@ export type WebviewToExt =
   | { type: "selectSource"; name: string }
   // pick the active collection; id null = the auto "all sources" collection
   | { type: "selectCollection"; id: string | null }
+  // open the organize dialog: ask for a snapshot of sources + collection manifests
+  | { type: "collections/plan" }
+  // save the organize dialog's edits as one batch
+  | { type: "collections/apply"; batch: CollectionBatch }
   | { type: "refreshSessions" }
   | { type: "refreshSources" }
   // import sources into the workspace (file-tree context menu; same flow as File ▸ Import)

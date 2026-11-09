@@ -7,6 +7,8 @@ import type { Bbox, ExtToWebview, WebviewToExt } from "../shared/webview-protoco
 import { HttpServer } from "./http-server";
 import { appendAppLog } from "./app-log";
 import { discoverSources, countPages, discoverCollections } from "./sources";
+import { readSnapshot, applyBatch } from "./collection-edit";
+import type { CollectionApplyResult, CollectionBatch } from "../shared/collection-edit";
 import { deriveDataKeyFallback } from "./data-key";
 import { listSessions, readSessionMessages } from "./sessions";
 import { readChronosSettings, writeChronosSettings, suggestPrefix, commandMatchesPrefix } from "./chronos-settings";
@@ -63,6 +65,11 @@ export interface AgentHostOptions {
 // genuinely user-facing. Hide package prompts; keep everything else.
 function isUserCommand(c: RpcSlashCommand): boolean {
   return !(c.source === "prompt" && c.sourceInfo?.origin === "package");
+}
+
+/** True when a batch result means something may have changed on disk. */
+export function shouldResync(result: CollectionApplyResult): boolean {
+  return result.ok || result.applied > 0;
 }
 
 export class AgentHost {
@@ -493,6 +500,11 @@ export class AgentHost {
     return this.activeCollection?.name ?? null;
   }
 
+  /** True while the agent is mid-answer (exposed for tests). */
+  get streaming(): boolean {
+    return this.isStreaming;
+  }
+
   /** The active collection's id (null = "all sources" or none announced yet). */
   get activeCollectionId(): string | null {
     return this.activeCollection?.id ?? null;
@@ -512,6 +524,32 @@ export class AgentHost {
     if (this.activeCollection && this.activeCollection.id !== null) return "named-collection";
     await this.rpc.request({ type: "prompt", message: `/select-collection (all sources)` }, 0);
     return "rebuilt";
+  }
+
+  /**
+   * Apply the organize dialog's batch to collections/*.json, refresh the header
+   * picker, and (if the agent is running) make it reload its catalogue by
+   * re-selecting the active collection. Refused while the agent is mid-answer.
+   */
+  async applyCollectionBatch(batch: CollectionBatch): Promise<CollectionApplyResult> {
+    if (this.isStreaming) {
+      return { ok: false, error: "The agent is mid-answer; try again when it finishes.", applied: 0 };
+    }
+    const result = applyBatch(this.workspaceDir, batch);
+    if (!shouldResync(result)) return result;
+    this.postCollections();
+    if (!this.rpc?.isRunning) return result;
+    const id = this.activeCollection?.id ?? null;
+    if (id === null) return result;
+    const stillThere = existsSync(join(this.workspaceDir, "collections", `${id}.json`));
+    try {
+      await this.rpc.request({ type: "prompt", message: `/select-collection ${stillThere ? id : "(all sources)"}` }, 0);
+    } catch (e) {
+      if (!result.ok) return result; // partial failure: keep the original error
+      const message = e instanceof Error ? e.message : String(e);
+      return { ok: true, warning: `Saved, but the agent could not reload its catalogue: ${message}` };
+    }
+    return result;
   }
 
   showPage(sourceDir: string, sourceName: string, pageId: number, bbox: Bbox | null, totalPages?: number): void {
@@ -765,6 +803,25 @@ export class AgentHost {
           // sentinel the pi-package's /select-collection maps back to null.
           const arg = msg.id ?? "(all sources)";
           await this.rpc?.request({ type: "prompt", message: `/select-collection ${arg}` }, 0);
+          break;
+        }
+        case "collections/plan":
+          // Always answer: the dialog waits on a reply.
+          try {
+            this.post({ type: "collections/snapshot", snapshot: readSnapshot(this.workspaceDir) });
+          } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            this.post({ type: "collections/applied", result: { ok: false, error: `Could not read collections: ${message}`, applied: 0 } });
+          }
+          break;
+        case "collections/apply": {
+          let result: CollectionApplyResult;
+          try {
+            result = await this.applyCollectionBatch(msg.batch);
+          } catch (e) {
+            result = { ok: false, error: e instanceof Error ? e.message : String(e), applied: 0 };
+          }
+          this.post({ type: "collections/applied", result });
           break;
         }
         case "refreshSessions":
