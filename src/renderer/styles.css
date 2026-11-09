@@ -349,6 +349,16 @@ chronos-app,
   background: color-mix(in srgb, var(--ch-accent) 85%, white);
 }
 
+.login-banner-btn.is-secondary {
+  background: transparent;
+  color: var(--ch-fg);
+  border: 1px solid var(--ch-border);
+}
+
+.login-banner-btn.is-secondary:hover {
+  background: var(--ch-surface-2);
+}
+
 #app-main {
   flex: 1 1 auto;
   display: flex;

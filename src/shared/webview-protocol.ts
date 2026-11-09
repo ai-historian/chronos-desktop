@@ -125,7 +125,7 @@ export type ExtToWebview =
   // reply to file/save; error "changed-on-disk" = the file's mtime no longer matches expectedMtimeMs
   | { type: "file/saved"; path: string; ok: boolean; mtimeMs?: number; error?: string }
   // test-only seam (integration tests): simulate a user action / request a state snapshot
-  | { type: "__test/invoke"; action: string; arg?: string }
+  | { type: "__test/invoke"; action: string; arg?: unknown }
   | { type: "__test/dump" };
 
 export type WebviewToExt =

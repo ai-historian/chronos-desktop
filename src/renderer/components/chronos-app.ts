@@ -7,6 +7,7 @@ import type {
 import type {
   ChronosSessionInfo,
   ExtToWebview,
+  UpdateStatus,
   WebviewToExt,
 } from "../../shared/webview-protocol";
 import type { ChronosChat } from "./chronos-chat";
@@ -83,6 +84,8 @@ export class ChronosApp extends LitElement {
     showPagePrompt: { state: true },
     progress: { state: true },
     organize: { state: true },
+    updateStatus: { state: true },
+    updateDismissed: { state: true },
   };
 
   declare state: RpcSessionState | null;
@@ -108,6 +111,9 @@ export class ChronosApp extends LitElement {
   declare loginProviders: ProviderOption[] | null;
   declare oauthStatus: OauthStatusView | null;
   declare chatHidden: boolean;
+  declare updateStatus: UpdateStatus;
+  /** Banner (`kind:version`) the user hid (renderer-local; resets on relaunch). */
+  declare updateDismissed: string | null;
   /** File-tree pane width in px (160–480). */
   declare treeWidth: number;
   declare treeHidden: boolean;
@@ -166,6 +172,8 @@ export class ChronosApp extends LitElement {
     this.collections = [];
     this.activeCollection = null;
     this.yolo = false;
+    this.updateStatus = { kind: "none" };
+    this.updateDismissed = null;
     this.contextTokens = 0;
     this.sessionLoading = null;
     this.tabsRev = 0;
@@ -281,6 +289,9 @@ export class ChronosApp extends LitElement {
         break;
       case "models":
         this.models = msg.models;
+        break;
+      case "update/status":
+        this.updateStatus = msg.status;
         break;
       case "loginRequired":
         this.loginRequired = msg.required;
@@ -454,10 +465,10 @@ export class ChronosApp extends LitElement {
 
   // ── test seam (integration tests drive the UI via the host) ───────────────
 
-  private runTestAction(action: string, arg?: string): void {
+  private runTestAction(action: string, arg?: unknown): void {
     switch (action) {
       case "sendPrompt":
-        this.chat?.testSubmit(arg ?? "");
+        this.chat?.testSubmit((arg as string | undefined) ?? "");
         break;
       case "openDataTab":
         this.activateTab("data");
@@ -472,7 +483,7 @@ export class ChronosApp extends LitElement {
         this.chat?.testInjectExpertWithTools();
         break;
       case "selectDataFile":
-        if (arg) this.dataViewer?.testSelect(arg);
+        if (arg) this.dataViewer?.testSelect(arg as string);
         break;
       case "viewFirstRow":
         this.dataViewer?.testViewFirstRow();
@@ -485,6 +496,9 @@ export class ChronosApp extends LitElement {
         break;
       case "openOrganize":
         this.openOrganize();
+        break;
+      case "updateStatus":
+        this.updateStatus = arg as UpdateStatus;
         break;
     }
   }
@@ -505,6 +519,7 @@ export class ChronosApp extends LitElement {
       viewer: this.viewer?.testSnapshot() ?? null,
       data: this.dataViewer?.testSnapshot() ?? null,
       organizeOpen: this.organize !== null,
+      update: this.updateStatus.kind,
     };
   }
 
@@ -909,6 +924,7 @@ export class ChronosApp extends LitElement {
         ${this.renderHeader()}
         ${this.progress.size ? this.renderProgress() : nothing}
         ${this.loginRequired ? this.renderLoginBanner() : nothing}
+        ${this.renderUpdateBanner()}
         <div id="app-main">
           <div id="pane-tree" ?hidden=${this.treeHidden} style="flex-basis:${this.treeWidth}px">
             <chronos-file-tree .currentSource=${this.currentSource}></chronos-file-tree>
@@ -1108,6 +1124,38 @@ export class ChronosApp extends LitElement {
         </button>
       </div>
     `;
+  }
+
+  private renderUpdateBanner(): TemplateResult | typeof nothing {
+    const u = this.updateStatus;
+    if (u.kind === "none") return nothing;
+    // Dismissal is per stage ("available:1.2.3" vs "ready:1.2.3"): a downloaded update
+    // that is ready to install should resurface even if its "available" banner was hidden.
+    const key = u.kind === "available" || u.kind === "ready" ? `${u.kind}:${u.version}` : null;
+    if (key && this.updateDismissed === key) return nothing;
+    const dismiss = () => { this.updateDismissed = key; };
+    const send = (type: "update/download" | "update/install" | "update/openDownloadPage") => this.postMessage({ type });
+    let text: TemplateResult;
+    let buttons: TemplateResult | typeof nothing = nothing;
+    if (u.kind === "available") {
+      const install = u.mode === "install";
+      text = install
+        ? html`<strong>Chronos ${u.version} is available.</strong>`
+        : html`<strong>Chronos ${u.version} is available.</strong> Download it from the Chronos download page.`;
+      buttons = html`
+        <button class="login-banner-btn" @click=${() => send(install ? "update/download" : "update/openDownloadPage")}>
+          ${install ? "Download" : "Open download page"}
+        </button>
+        <button class="login-banner-btn is-secondary" aria-label="Dismiss" @click=${dismiss}>✕</button>`;
+    } else if (u.kind === "downloading") {
+      text = html`Downloading Chronos ${u.version}… ${u.percent}%`;
+    } else {
+      text = html`<strong>Chronos ${u.version} is ready.</strong> It installs when you quit Chronos.`;
+      buttons = html`
+        <button class="login-banner-btn" @click=${() => send("update/install")}>Restart to update</button>
+        <button class="login-banner-btn is-secondary" @click=${dismiss}>Later</button>`;
+    }
+    return html`<div class="login-banner update-banner"><span class="login-banner-text">${text}</span>${buttons}</div>`;
   }
 
   private renderContextMeter(): TemplateResult | typeof nothing {

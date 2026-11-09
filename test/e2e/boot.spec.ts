@@ -23,7 +23,7 @@ function testState(p: Page): Promise<any> {
 }
 
 /** Deliver a __test/invoke to the renderer root, as the host would. */
-function invoke(p: Page, action: string, arg?: string): Promise<void> {
+function invoke(p: Page, action: string, arg?: unknown): Promise<void> {
   return p.evaluate(
     ([action, arg]) => (globalThis as any).document.querySelector("chronos-app").handleMessage({ type: "__test/invoke", action, arg }),
     [action, arg] as const,
@@ -116,6 +116,16 @@ test("Organize sources: create a collection, tick a source, save", async () => {
   expect(existsSync(file)).toBe(true);
   expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ name: "Parish Books", members: [{ path: "sources/TestSource" }] });
   await expect(page.locator("#app-header select.control-select option", { hasText: "Parish Books" })).toHaveCount(1);
+});
+
+test("update banner: available → dismiss; ready → restart posts update/install", async () => {
+  await invoke(page, "updateStatus", { kind: "available", version: "9.9.9", mode: "install" });
+  await expect(page.locator(".update-banner")).toContainText("Chronos 9.9.9 is available.");
+  await page.locator(".update-banner button", { hasText: "✕" }).click();
+  await expect(page.locator(".update-banner")).toHaveCount(0);
+  await invoke(page, "updateStatus", { kind: "ready", version: "9.9.9" });
+  await expect(page.locator(".update-banner")).toContainText("Chronos 9.9.9 is ready.");
+  expect((await testState(page)).update).toBe("ready");
 });
 
 test("no CSP violations, failed loads or page errors", async () => {
