@@ -38,7 +38,15 @@ export interface ChronosSessionInfo {
   userName?: string;
 }
 
+export type UpdateStatus =
+  | { kind: "none" }
+  | { kind: "available"; version: string; mode: "install" | "notify" }
+  | { kind: "downloading"; version: string; percent: number }
+  | { kind: "ready"; version: string };
+
 export type ExtToWebview =
+  // dismissed: the user hid the banner for this stage and version (kept by main until the next launch)
+  | { type: "update/status"; status: UpdateStatus; dismissed: boolean }
   // app theme (CSS variables text applied by the renderer)
   | { type: "theme"; name: ThemeName; css: string }
   // chat / agent
@@ -118,10 +126,14 @@ export type ExtToWebview =
   // reply to file/save; error "changed-on-disk" = the file's mtime no longer matches expectedMtimeMs
   | { type: "file/saved"; path: string; ok: boolean; mtimeMs?: number; error?: string }
   // test-only seam (integration tests): simulate a user action / request a state snapshot
-  | { type: "__test/invoke"; action: string; arg?: string }
+  | { type: "__test/invoke"; action: string; arg?: unknown }
   | { type: "__test/dump" };
 
 export type WebviewToExt =
+  | { type: "update/download" }
+  | { type: "update/install" }
+  | { type: "update/openDownloadPage" }
+  | { type: "update/dismiss"; kind: "available" | "ready"; version: string }
   | { type: "ready" }
   | { type: "prompt"; text: string }
   | { type: "abort" }

@@ -23,7 +23,7 @@ function testState(p: Page): Promise<any> {
 }
 
 /** Deliver a __test/invoke to the renderer root, as the host would. */
-function invoke(p: Page, action: string, arg?: string): Promise<void> {
+function invoke(p: Page, action: string, arg?: unknown): Promise<void> {
   return p.evaluate(
     ([action, arg]) => (globalThis as any).document.querySelector("chronos-app").handleMessage({ type: "__test/invoke", action, arg }),
     [action, arg] as const,
@@ -116,6 +116,43 @@ test("Organize sources: create a collection, tick a source, save", async () => {
   expect(existsSync(file)).toBe(true);
   expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ name: "Parish Books", members: [{ path: "sources/TestSource" }] });
   await expect(page.locator("#app-header select.control-select option", { hasText: "Parish Books" })).toHaveCount(1);
+});
+
+test("update banner: ✕ posts update/dismiss; a dismissed status stays hidden; Restart posts update/install", async () => {
+  // Record what the renderer posts to main (main has no UpdateHost under CHRONOS_E2E).
+  await page.evaluate(() => {
+    const el = (globalThis as any).document.querySelector("chronos-app");
+    const orig = el.postMessage;
+    el.__posted = [];
+    el.postMessage = (m: unknown) => {
+      el.__posted.push(m);
+      orig(m);
+    };
+  });
+  const posted = () => page.evaluate(() => (globalThis as any).document.querySelector("chronos-app").__posted as any[]);
+  const status = (s: unknown, dismissed: boolean) =>
+    page.evaluate(([s, dismissed]) => (globalThis as any).document.querySelector("chronos-app").handleMessage({ type: "update/status", status: s, dismissed }), [s, dismissed] as const);
+  const banner = page.locator(".update-banner");
+
+  await invoke(page, "updateStatus", { kind: "available", version: "9.9.9", mode: "install" });
+  await expect(banner).toContainText("Chronos 9.9.9 is available.");
+  await page.locator(".update-banner button", { hasText: "✕" }).click();
+  await expect(banner).toHaveCount(0);
+  expect(await posted()).toContainEqual({ type: "update/dismiss", kind: "available", version: "9.9.9" });
+
+  // What a reloaded renderer receives from main: the status with dismissed set.
+  await status({ kind: "available", version: "9.9.9", mode: "install" }, true);
+  await expect(banner).toHaveCount(0);
+  await status({ kind: "available", version: "9.9.9", mode: "install" }, false);
+  await expect(banner).toContainText("Chronos 9.9.9 is available.");
+
+  await status({ kind: "ready", version: "9.9.9" }, false);
+  await expect(banner).toContainText("Chronos 9.9.9 is ready.");
+  expect((await testState(page)).update).toBe("ready");
+  await page.locator(".update-banner button", { hasText: "Restart to update" }).click();
+  expect(await posted()).toContainEqual({ type: "update/install" });
+  await status({ kind: "none" }, false);
+  await expect(banner).toHaveCount(0);
 });
 
 test("no CSP violations, failed loads or page errors", async () => {

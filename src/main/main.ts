@@ -14,7 +14,8 @@ import { RecentStore, ensureWorkspace, pickFolderToCreate, pickWorkspaceToOpen }
 import { appLogPath, installAppLog } from "./app-log";
 import { buildMenu, type MenuActions, type MenuState } from "./menu";
 import { ensurePiDefaultModel, rememberModelChoice } from "./pi-settings";
-import { readAppSettings, writeAppSettings } from "./app-settings";
+import { readAppSettings, writeAppSettings, type AppSettings } from "./app-settings";
+import { UpdateHost, updateMode, readyText, DOWNLOAD_PAGE, type ManualResult, type UpdateMode, type UpdaterLike } from "./update-host";
 import {
   findIncompleteImports,
   importFiles,
@@ -78,7 +79,9 @@ function closeMainWindow(after: AfterClose): void {
   mainWindow.close();
 }
 let recent: RecentStore;
-let themePref: "system" | ThemeName = "system";
+let settings: AppSettings = { theme: "system", checkForUpdates: true };
+let updateHost: UpdateHost | undefined;
+let updateModeValue: UpdateMode = "off";
 // Live main-window host and its last reported state, for the application menu.
 let activeHost: AgentHost | undefined;
 let hostState: Pick<MenuState, "models" | "currentModel" | "thinking" | "yolo"> = { models: [], thinking: "off", yolo: false };
@@ -89,7 +92,7 @@ function webPrefs(): Electron.WebPreferences {
 
 function sendTheme(win: BrowserWindow): void {
   if (win.isDestroyed() || win.webContents.isDestroyed()) return;
-  const name = resolveTheme(themePref, nativeTheme.shouldUseDarkColors);
+  const name = resolveTheme(settings.theme, nativeTheme.shouldUseDarkColors);
   win.webContents.send("chronos:msg", { type: "theme", name, css: themeCss(name) });
 }
 
@@ -213,6 +216,7 @@ function createMainWindow(workspaceDir: string): BrowserWindow {
       return;
     }
     // File-tree / file messages first; everything else is the agent host's.
+    if (updateHost?.handleWebviewMessage(msg)) return;
     if (tree.handle(msg)) return;
     void host?.handleWebviewMessage(msg);
   };
@@ -291,6 +295,7 @@ function createMainWindow(workspaceDir: string): BrowserWindow {
   rebuildMenu();
   // Every (re)load gets a fresh root listing; the watcher dedupes already-watched dirs.
   win.webContents.on("did-finish-load", () => tree.start());
+  win.webContents.on("did-finish-load", () => updateHost?.repost());
   win.webContents.once("did-finish-load", () => {
     void h.start();
     void promptRecoverIncompleteImports(win, h, workspaceDir);
@@ -305,9 +310,11 @@ function createMainWindow(workspaceDir: string): BrowserWindow {
     if (!mainOwnClose && !quitting) mainAfterClose = { kind: "welcome" };
     mainOwnClose = false;
   });
-  // The renderer's beforeunload cancelled the close (unsaved edits): a quit in progress is aborted.
+  // The renderer's beforeunload cancelled the close (unsaved edits): a quit in progress is aborted,
+  // and so is a "Restart to update" that started it.
   win.webContents.on("will-prevent-unload", () => {
     quitting = false;
+    updateHost?.cancelInstall();
   });
   win.on("closed", () => {
     const after: AfterClose = mainWindow === win ? mainAfterClose : { kind: "welcome" };
@@ -358,15 +365,70 @@ function hostMsg(msg: WebviewToExt): void {
   void activeHost?.handleWebviewMessage(msg);
 }
 
-function setThemePref(t: "system" | ThemeName): void {
-  themePref = t;
+function saveSettings(patch: Partial<AppSettings>): void {
+  settings = { ...settings, ...patch };
   try {
-    writeAppSettings(app.getPath("userData"), { theme: t });
+    writeAppSettings(app.getPath("userData"), settings);
   } catch (e) {
     console.error("[chronos] could not save settings:", e);
   }
-  for (const w of BrowserWindow.getAllWindows()) sendTheme(w);
   rebuildMenu();
+}
+
+function setThemePref(t: "system" | ThemeName): void {
+  saveSettings({ theme: t });
+  for (const w of BrowserWindow.getAllWindows()) sendTheme(w);
+}
+
+function manualResultText(r: ManualResult): string {
+  if (r.kind === "upToDate") return `Chronos ${r.version} is up to date.`;
+  if (r.kind === "available") return `Chronos ${r.version} is available. Download it from ${DOWNLOAD_PAGE}`;
+  if (r.kind === "ready") return readyText(r.version);
+  return `Update check failed: ${r.message}`;
+}
+
+/** Welcome-window answer to a manual check (the main window shows a toast instead). */
+async function showManualResult(r: ManualResult): Promise<void> {
+  const buttons = r.kind === "available" ? ["Open download page", "OK"] : ["OK"];
+  const { response } = await dialog.showMessageBox({
+    type: r.kind === "error" ? "warning" : "info",
+    title: "Chronos updates",
+    message: manualResultText(r),
+    buttons,
+    defaultId: 0,
+  });
+  if (r.kind === "available" && response === 0) void shell.openExternal(DOWNLOAD_PAGE);
+}
+
+function startUpdates(): void {
+  updateModeValue = updateMode({ platform: process.platform, isPackaged: app.isPackaged, env: process.env });
+  if (updateModeValue === "off") return;
+  // Loaded only when updates are on, so a missing module disables updates instead of startup.
+  let autoUpdater: typeof import("electron-updater").autoUpdater;
+  try {
+    autoUpdater = (require("electron-updater") as typeof import("electron-updater")).autoUpdater;
+  } catch (e) {
+    console.error("[update] electron-updater unavailable, updates are off:", e);
+    updateModeValue = "off";
+    return;
+  }
+  // electron-updater's own download/install log goes to the app log too.
+  const updaterLog = (...args: unknown[]) => console.log("[update] " + args.map(String).join(" "));
+  autoUpdater.logger = { info: updaterLog, warn: updaterLog, error: updaterLog, debug: updaterLog };
+  updateHost = new UpdateHost({
+    updater: autoUpdater as unknown as UpdaterLike, // electron-updater's typed `on` overloads differ from UpdaterLike's
+    mode: updateModeValue,
+    currentVersion: app.getVersion(),
+    post: sendToMain,
+    openExternal: (u) => void shell.openExternal(u),
+    // UpdateHost already prefixes its lines with "[update] ".
+    log: (line) => console.log(line),
+    requestQuit: () => app.quit(),
+    onManualResult: (r) => {
+      if (!mainWindow || mainWindow.isDestroyed()) void showManualResult(r);
+    },
+  });
+  if (settings.checkForUpdates) setTimeout(() => void updateHost?.check({ manual: false }), 15_000);
 }
 
 // ── source import ───────────────────────────────────────────────────────────
@@ -618,6 +680,8 @@ function menuActions(): MenuActions {
     openDiscord: open("https://discord.gg/VZmfCnqkvz"),
     reportIssue: open("https://github.com/ai-historian/chronos-desktop/issues/new"),
     showLogs,
+    checkForUpdates: () => void updateHost?.check({ manual: true }),
+    toggleUpdateCheck: () => saveSettings({ checkForUpdates: !settings.checkForUpdates }),
     about: () =>
       void dialog.showMessageBox({ type: "info", title: "About Chronos", message: "Chronos", detail: aboutText(), buttons: ["OK"] }),
   };
@@ -627,9 +691,11 @@ function rebuildMenu(): void {
   const hasWorkspace = !!(mainWindow && !mainWindow.isDestroyed());
   const state: MenuState = {
     ...hostState,
-    theme: themePref,
+    theme: settings.theme,
     hasWorkspace,
     recent: recent ? recent.list() : [],
+    updateCheck: settings.checkForUpdates,
+    updatesSupported: updateModeValue !== "off",
   };
   if (!hasWorkspace) Object.assign(state, { models: [], currentModel: undefined });
   const menu = buildMenu(menuActions(), state);
@@ -642,9 +708,11 @@ function rebuildMenu(): void {
 
 app.whenReady().then(() => {
   recent = new RecentStore(join(app.getPath("userData"), "recent.json"));
-  themePref = readAppSettings(app.getPath("userData")).theme;
+  settings = readAppSettings(app.getPath("userData"));
   const vendor = resolveVendorPaths({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appRoot: app.getAppPath() });
   console.log(`[chronos] pi cli: ${vendor.piCli} (agent: ${vendor.agentDir})`);
+  rebuildMenu();
+  startUpdates();
   rebuildMenu();
   installChronosFileHandler(() => (currentWorkspace ? [currentWorkspace] : []));
   const fromArgv = workspaceFromArgv(process.argv);
@@ -662,6 +730,8 @@ app.on("before-quit", () => {
   // If the main window's renderer pauses the quit for unsaved edits, finish it after window/close.
   if (mainWindow && !mainWindow.isDestroyed()) mainAfterClose = { kind: "quit" };
 });
+// Every window has closed (no veto left): run the installer if "Restart to update" asked for it.
+app.on("will-quit", () => updateHost?.finishInstall());
 // macOS convention: closing the last window keeps the app running (in the dock); clicking the dock
 // icon then reopens the welcome window. Linux/Windows quit with the last window.
 app.on("window-all-closed", () => {

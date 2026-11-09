@@ -104,7 +104,8 @@ npm run dist -- --linux AppImage deb   # pick targets explicitly
   `agent/` pi-package (production `node_modules`), and refreshes `resources/licenses/`.
 - `npm run build` bundles the app into `out/` with esbuild.
 - `electron-builder` (config in `electron-builder.yml`) writes the artefacts to `dist/`:
-  `Chronos-<version>.AppImage` and `chronos_<version>_amd64.deb` on Linux,
+  `Chronos.AppImage` (version-free, so in-place updates keep the file name and launchers keep
+  working) and `chronos_<version>_amd64.deb` on Linux,
   `Chronos-<version>-arm64.dmg` / `Chronos-<version>-x64.dmg` on macOS (`--mac --arm64` or
   `--mac --x64`, matching the build machine), an NSIS `Setup .exe` on Windows. `vendor/`
   and the licences ship under the app's `resources/`, outside the asar; the PDF import
@@ -116,6 +117,12 @@ installer on that OS. The same holds per CPU architecture: there is no universal
 build. CI builds the arm64 dmg on `macos-latest` and the x64 dmg on `macos-15-intel`; the
 x64 leg depends on GitHub still offering an Intel macOS runner label. `bundle-agent` has
 no target-platform switch yet.
+
+### Updates
+
+The app checks for a newer release on startup (15 s after launch) and from Help ▸ Check for updates…; the startup check can be switched off under Help ▸ Check for updates automatically. On Windows (NSIS installer) and Linux AppImage it downloads on request; "Restart to update" quits normally (unsaved edits can still cancel it) and installs once every window has closed, then relaunches, and otherwise the update installs when you quit. An AppImage in a folder Chronos cannot write to (e.g. `/opt`) is notify-only. On the `.deb` and on macOS it only announces the new version and links to https://hufe.info/chronos/. Unpackaged runs (`npm run dev`) and e2e do not check at all. Nothing is downloaded or installed without a click.
+
+Updates reach users only once the `v<version>` draft release is published, because electron-updater reads the release's `latest*.yml` files. In-app install on macOS additionally requires a signed (and notarized) build and a `zip` target next to the `dmg`, and the arm64 and x64 legs each upload a `latest-mac.yml` that overwrites the other's, so the two entries must be merged into one file; until then macOS stays notify-only.
 
 **macOS and signing.** Without an Apple Developer certificate the macOS builds are
 ad-hoc signed by `scripts/adhoc-sign.cjs`. The app runs, but on first launch macOS blocks

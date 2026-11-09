@@ -3,15 +3,17 @@ import { join } from "node:path";
 
 export interface AppSettings {
   theme: "system" | "light" | "dark";
+  checkForUpdates: boolean;
 }
 
-const DEFAULTS: AppSettings = { theme: "system" };
+const DEFAULTS: AppSettings = { theme: "system", checkForUpdates: true };
 
 export function readAppSettings(dir: string): AppSettings {
   try {
     const j = JSON.parse(readFileSync(join(dir, "settings.json"), "utf-8"));
     const theme = j?.theme === "light" || j?.theme === "dark" || j?.theme === "system" ? j.theme : DEFAULTS.theme;
-    return { theme };
+    const checkForUpdates = typeof j?.checkForUpdates === "boolean" ? j.checkForUpdates : DEFAULTS.checkForUpdates;
+    return { theme, checkForUpdates };
   } catch {
     return { ...DEFAULTS };
   }
