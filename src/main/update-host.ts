@@ -2,17 +2,56 @@
  * Auto-update core, free of any electron import: wraps an electron-updater-shaped
  * object and turns its events into `update/status` messages and toasts.
  */
+import { accessSync, constants } from "node:fs";
+import { dirname } from "node:path";
 import type { ExtToWebview, UpdateStatus, WebviewToExt } from "../shared/webview-protocol";
+
+const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 export const DOWNLOAD_PAGE = "https://hufe.info/chronos/";
 export type UpdateMode = "install" | "notify" | "off";
 
-/** install: download + restart in-app; notify: only announce; off: dev / e2e. */
-export function updateMode(o: { platform: NodeJS.Platform; isPackaged: boolean; env: NodeJS.ProcessEnv }): UpdateMode {
+const canWrite = (dir: string): boolean => {
+  try {
+    accessSync(dir, constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * install: download + restart in-app; notify: only announce; off: dev / e2e.
+ * An AppImage installs only when its folder is writable (the update replaces the file).
+ */
+export function updateMode(o: {
+  platform: NodeJS.Platform;
+  isPackaged: boolean;
+  env: NodeJS.ProcessEnv;
+  isWritable?: (dir: string) => boolean;
+}): UpdateMode {
   if (!o.isPackaged || o.env.CHRONOS_E2E === "1") return "off";
   if (o.platform === "win32") return "install";
-  if (o.platform === "linux") return o.env.APPIMAGE ? "install" : "notify";
+  if (o.platform === "linux") {
+    if (!o.env.APPIMAGE) return "notify";
+    return (o.isWritable ?? canWrite)(dirname(o.env.APPIMAGE)) ? "install" : "notify";
+  }
   return "notify";
+}
+
+const NO_UPDATE_INFO = new Set(["ERR_UPDATER_CHANNEL_FILE_NOT_FOUND", "ERR_UPDATER_LATEST_VERSION_NOT_FOUND"]);
+const NO_CONNECTION = new Set(["ENOTFOUND", "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EAI_AGAIN"]);
+
+/** A short, user-facing text for an electron-updater error (its messages embed stacks and headers). */
+export function describeUpdateError(err: unknown): string {
+  const code = (err as { code?: unknown } | null)?.code;
+  const message = messageOf(err);
+  if (typeof code === "string" && NO_UPDATE_INFO.has(code)) return "No update information for this platform yet.";
+  if ((typeof code === "string" && NO_CONNECTION.has(code)) || message.startsWith("net::ERR_")) {
+    return "No connection to the update server.";
+  }
+  const first = message.split("\n", 1)[0].trim();
+  return first.length > 120 ? first.slice(0, 119) + "…" : first;
 }
 
 /** The slice of electron-updater's AppUpdater that UpdateHost uses (tests pass a fake). */
@@ -41,8 +80,6 @@ export interface UpdateHostOptions {
   requestQuit: () => void;
   onManualResult?: (r: ManualResult) => void;
 }
-
-const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 export class UpdateHost {
   private o: UpdateHostOptions;
@@ -161,20 +198,24 @@ export class UpdateHost {
   }
 
   private onError(err: unknown): void {
-    const message = messageOf(err);
-    this.o.log(`[update] ${this.phase === "idle" ? "error" : `${this.phase} error`}: ${message}`);
+    this.o.log(`[update] ${this.phase === "idle" ? "error" : `${this.phase} error`}: ${messageOf(err)}`);
+    const short = describeUpdateError(err);
     if (this.phase === "checking") {
       this.phase = "idle";
       if (this.manual) {
-        this.o.post({ type: "notify", level: "warning", message: `Update check failed: ${message}` });
-        this.o.onManualResult?.({ kind: "error", message });
+        this.o.post({ type: "notify", level: "warning", message: `Update check failed: ${short}` });
+        this.o.onManualResult?.({ kind: "error", message: short });
       }
     } else if (this.phase === "downloading") {
       this.phase = "idle";
       if (this._status.kind === "downloading") {
         this.setStatus({ kind: "available", version: this._status.version, mode: this.o.mode });
       }
-      this.o.post({ type: "notify", level: "warning", message: `Update download failed: ${message}` });
+      this.o.post({ type: "notify", level: "warning", message: `Update download failed: ${short}` });
+    } else if (this._status.kind === "ready") {
+      // The installer failed (e.g. AppImage folder not writable); the download stays valid.
+      this.installRequested = false;
+      this.o.post({ type: "notify", level: "warning", message: `Update install failed: ${short}` });
     }
   }
 }
