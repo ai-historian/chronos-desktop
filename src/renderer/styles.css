@@ -1884,7 +1884,7 @@ details.compaction-divider summary:hover .compaction-label {
   border-radius: var(--ch-radius-sm);
   border: 1px solid var(--ch-border-soft);
   background: transparent;
-  color: var(--ch-fg-muted, inherit);
+  color: var(--ch-muted);
 }
 
 .organize-inline-cancel:hover {
@@ -1895,7 +1895,7 @@ details.compaction-divider summary:hover .compaction-label {
   flex-basis: 100%;
   font-size: 10px;
   font-weight: 400;
-  color: var(--ch-fg-muted, var(--vscode-descriptionForeground));
+  color: var(--ch-muted);
   text-align: left;
 }
 
