@@ -38,7 +38,10 @@ linux:
     entry:
       Name: Chronos
   category: Office
-  icon: resources/icon.png
+  # A full hicolor set: with the single 1024px png only /usr/share/icons/hicolor/1024x1024 was
+  # installed and GNOME showed a generic icon (icon themes rarely look there). Regenerate the
+  # set from resources/icon.png with `node scripts/render-icons.mjs` after changing the source.
+  icon: resources/icons
   maintainer: Lorenz Hufe <lorenz.hufe@posteo.de>
 
 # Version-free so an in-place update keeps the file name (users' launchers keep working).
