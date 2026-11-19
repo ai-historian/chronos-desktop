@@ -78,11 +78,16 @@ run("npm ci --omit=dev --omit=peer", agentDest);
 console.log(`vendored chronos agent -> ${agentDest}`);
 
 // --- node runtime (Linux) -----------------------------------------------
-// sharp's libvips needs a newer GLib than Electron's bundled Node can load on
-// some distros, so packaged Linux builds run pi with an official Node binary.
+// Electron's Linux binary is linked against the system GLib, and sharp's bundled libvips
+// resolves its g_object_* calls to that copy instead of its own (assertion failure on
+// GLib 2.80, crash on newer GLib). A plain Node binary links no GLib, so packaged Linux
+// builds run pi with an official Node.
 const nodeDest = join(vendor, "node");
 rmSync(nodeDest, { recursive: true, force: true });
 if (process.platform === "linux") {
+  // Keep in step with the Node inside the pinned Electron (ELECTRON_RUN_AS_NODE=1 npx electron
+  // -p process.versions.node) so the agent runs the same Node line packaged and in dev; bump
+  // it when Electron is bumped.
   const nodeVersion = readJson(join(appRoot, "package.json")).nodeRuntimeVersion;
   if (!nodeVersion) throw new Error("package.json has no nodeRuntimeVersion");
   const nodeArch = { x64: "x64", arm64: "arm64" }[process.arch];
@@ -95,7 +100,7 @@ if (process.platform === "linux") {
   mkdirSync(cacheDir, { recursive: true });
 
   const download = async (url) => {
-    const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(600_000) });
     if (!res.ok) throw new Error(`download failed: ${url} -> HTTP ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
   };

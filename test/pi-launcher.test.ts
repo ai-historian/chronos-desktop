@@ -70,11 +70,20 @@ test("resolveVendorPaths packaged vs dev", () => {
 test("uses the bundled node when nodeBin exists, without ELECTRON_RUN_AS_NODE", () => {
   const dir = mkdtempSync(join(tmpdir(), "chronos-node-"));
   try {
-    const nodeBin = join(dir, "node"); writeFileSync(nodeBin, "");
+    const nodeBin = join(dir, "node"); writeFileSync(nodeBin, "", { mode: 0o755 });
     const l = buildPiLaunch({ vendor: { piCli: "/x/cli.js", agentDir: "/a", nodeBin }, workspaceDir: "/w", userDataDir: "/u", httpPort: 1, execPath: "/e" });
     assert.equal(l.bin, nodeBin);
     assert.equal("ELECTRON_RUN_AS_NODE" in l.env, false);
     assert.equal(l.env.CHRONOS_HTTP_PORT, "1");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+test("falls back to Electron when nodeBin is not executable", () => {
+  const dir = mkdtempSync(join(tmpdir(), "chronos-node-"));
+  try {
+    const nodeBin = join(dir, "node"); writeFileSync(nodeBin, "", { mode: 0o644 });
+    const l = buildPiLaunch({ vendor: { piCli: "/x/cli.js", agentDir: "/a", nodeBin }, workspaceDir: "/w", userDataDir: "/u", httpPort: 1, execPath: "/e" });
+    assert.equal(l.bin, "/e");
+    assert.equal(l.env.ELECTRON_RUN_AS_NODE, "1");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 test("falls back to Electron when nodeBin is missing", () => {

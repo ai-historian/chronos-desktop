@@ -16,7 +16,7 @@ files:
   - node_modules/mupdf/**
   - resources/icon.png
 
-# Never enter the asar: the pi runtime + chronos agent (spawned with ELECTRON_RUN_AS_NODE)
+# Never enter the asar: the pi runtime + chronos agent (spawned with ELECTRON_RUN_AS_NODE, or with the bundled node on Linux)
 # and the third-party licence texts.
 extraResources:
   - from: vendor

@@ -1,11 +1,16 @@
-import { existsSync } from "node:fs";
+import { accessSync, constants, existsSync } from "node:fs";
 import { join } from "node:path";
 import { readEnvFile } from "./env-file";
 import type { VendorPaths } from "./paths";
 
+/** True when `path` exists and the current user may execute it. */
+export function isExecutable(path: string): boolean {
+  try { accessSync(path, constants.X_OK); return true; } catch { return false; }
+}
+
 // Builds the argv/env for spawning the bundled pi in RPC mode. pi runs under
 // Electron's own binary as plain Node (ELECTRON_RUN_AS_NODE), or under the bundled
-// Node when vendor.nodeBin exists. `env` holds only
+// Node when vendor.nodeBin is executable. `env` holds only
 // Chronos-specific vars; PiRpcSession merges process.env itself.
 
 export interface PiLaunch {
@@ -28,7 +33,7 @@ export function buildPiLaunch(opts: {
   if (existsSync(skillsDir)) args.push("--skill", skillsDir);
 
   // A bundled real Node (packaged Linux) replaces Electron-as-Node when present.
-  const useNode = !!opts.vendor.nodeBin && existsSync(opts.vendor.nodeBin);
+  const useNode = !!opts.vendor.nodeBin && isExecutable(opts.vendor.nodeBin);
   const env: Record<string, string> = {
     // Workspace keys first so they can never override the launcher's own vars.
     ...readEnvFile(join(opts.workspaceDir, ".chronos", ".env")),
