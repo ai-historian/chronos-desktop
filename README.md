@@ -106,7 +106,7 @@ npm run dist -- --linux AppImage deb   # pick targets explicitly
   `agent/` pi-package (production `node_modules`), and refreshes `resources/licenses/`. On
   Linux it also vendors Node `nodeRuntimeVersion`: packaged Linux builds run pi with it
   rather than Electron's binary, because sharp's libvips needs a newer GLib than Electron
-  loads on some distros. Needs network access on the first run (cached afterwards).
+  loads on some distros. Needs network access on every Linux run: the tarball is cached in `.cache/node/`, but SHASUMS256.txt is re-fetched each time to re-verify it.
 - `npm run build` bundles the app into `out/` with esbuild.
 - `electron-builder` (config in `electron-builder.yml`) writes the artefacts to `dist/`:
   `Chronos.AppImage` (version-free, so in-place updates keep the file name and launchers keep

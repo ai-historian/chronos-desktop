@@ -95,7 +95,7 @@ if (process.platform === "linux") {
   mkdirSync(cacheDir, { recursive: true });
 
   const download = async (url) => {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`download failed: ${url} -> HTTP ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
   };
