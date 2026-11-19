@@ -712,7 +712,7 @@ app.whenReady().then(() => {
   const vendor = resolveVendorPaths({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appRoot: app.getAppPath() });
   console.log(`[chronos] pi cli: ${vendor.piCli} (agent: ${vendor.agentDir}, runtime: ${vendor.nodeBin ?? "electron"})`);
   if (vendor.nodeBin && !isExecutable(vendor.nodeBin)) {
-    console.warn(`[chronos] bundled node missing at ${vendor.nodeBin}; running the agent under Electron`);
+    console.warn(`[chronos] bundled node missing or not executable at ${vendor.nodeBin}; running the agent under Electron`);
   }
   rebuildMenu();
   startUpdates();

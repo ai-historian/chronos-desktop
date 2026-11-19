@@ -22,9 +22,10 @@
 //
 // Usage: node scripts/bundle-agent.mjs
 
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -41,7 +42,7 @@ const run = (cmd, cwd) => {
 };
 
 // --- pi runtime ---------------------------------------------------------
-const piVersion = readJson(join(appRoot, "package.json")).piVersion;
+const { piVersion, nodeRuntimeVersion } = readJson(join(appRoot, "package.json"));
 const piPkg = readJson(join(piSrc, "package.json"));
 if (piPkg.version !== piVersion) {
   throw new Error(`installed pi is ${piPkg.version}, package.json piVersion is ${piVersion} — run npm ci`);
@@ -82,14 +83,22 @@ console.log(`vendored chronos agent -> ${agentDest}`);
 // resolves its g_object_* calls to that copy instead of its own (assertion failure on
 // GLib 2.80, crash on newer GLib). A plain Node binary links no GLib, so packaged Linux
 // builds run pi with an official Node.
+
+// Drift check (every platform): nodeRuntimeVersion must equal the Node inside the pinned
+// Electron so the agent runs the same Node line packaged and in dev; bump it with Electron.
+if (!nodeRuntimeVersion) throw new Error("package.json has no nodeRuntimeVersion");
+const electronPath = createRequire(import.meta.url)("electron");
+const electronNode = execFileSync(electronPath, ["-p", "process.versions.node"], {
+  env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+}).toString().trim();
+if (electronNode !== nodeRuntimeVersion) {
+  throw new Error(`package.json nodeRuntimeVersion is ${nodeRuntimeVersion} but the pinned Electron embeds Node ${electronNode}; set nodeRuntimeVersion to ${electronNode}`);
+}
+
 const nodeDest = join(vendor, "node");
 rmSync(nodeDest, { recursive: true, force: true });
 if (process.platform === "linux") {
-  // Keep in step with the Node inside the pinned Electron (ELECTRON_RUN_AS_NODE=1 npx electron
-  // -p process.versions.node) so the agent runs the same Node line packaged and in dev; bump
-  // it when Electron is bumped.
-  const nodeVersion = readJson(join(appRoot, "package.json")).nodeRuntimeVersion;
-  if (!nodeVersion) throw new Error("package.json has no nodeRuntimeVersion");
+  const nodeVersion = nodeRuntimeVersion;
   const nodeArch = { x64: "x64", arm64: "arm64" }[process.arch];
   if (!nodeArch) throw new Error(`unsupported architecture for the bundled node: ${process.arch}`);
   const base = `https://nodejs.org/dist/v${nodeVersion}`;
@@ -97,6 +106,7 @@ if (process.platform === "linux") {
   const tarName = `${stem}.tar.xz`;
   const cacheDir = join(appRoot, ".cache", "node");
   const tarPath = join(cacheDir, tarName);
+  const sidecar = `${tarPath}.sha256`;
   mkdirSync(cacheDir, { recursive: true });
 
   const download = async (url) => {
@@ -104,28 +114,41 @@ if (process.platform === "linux") {
     if (!res.ok) throw new Error(`download failed: ${url} -> HTTP ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
   };
-  const sums = (await download(`${base}/SHASUMS256.txt`)).toString("utf-8");
-  const expected = sums.split("\n").map((l) => l.trim().split(/\s+/)).find((p) => p[1] === tarName)?.[0];
-  if (!expected) throw new Error(`no SHA-256 for ${tarName} in ${base}/SHASUMS256.txt`);
-  const verify = () => {
-    const actual = createHash("sha256").update(readFileSync(tarPath)).digest("hex");
+  const fetchExpected = async () => {
+    const sums = (await download(`${base}/SHASUMS256.txt`)).toString("utf-8");
+    const e = sums.split("\n").map((l) => l.trim().split(/\s+/)).find((p) => p[1] === tarName)?.[0];
+    if (!e) throw new Error(`no SHA-256 for ${tarName} in ${base}/SHASUMS256.txt`);
+    return e;
+  };
+  // A file failing verification is deleted so the next run starts clean.
+  const verify = (path, expected) => {
+    const actual = createHash("sha256").update(readFileSync(path)).digest("hex");
     if (actual !== expected) {
-      rmSync(tarPath, { force: true });
-      throw new Error(`SHA-256 mismatch for ${tarName}: expected ${expected}, got ${actual} (removed the cached file)`);
+      rmSync(path, { force: true });
+      throw new Error(`SHA-256 mismatch for ${tarName}: expected ${expected}, got ${actual} (removed the file)`);
     }
   };
-  if (!existsSync(tarPath)) {
+  if (existsSync(tarPath)) {
+    // Warm cache: verify against the digest recorded at download time (offline-capable);
+    // without the sidecar, fall back to nodejs.org's SHASUMS256.txt.
+    const expected = existsSync(sidecar) ? readFileSync(sidecar, "utf-8").trim() : await fetchExpected();
+    verify(tarPath, expected);
+  } else {
+    const expected = await fetchExpected();
     console.log(`downloading ${base}/${tarName}`);
-    writeFileSync(tarPath, await download(`${base}/${tarName}`));
+    const partial = `${tarPath}.partial`;
+    writeFileSync(partial, await download(`${base}/${tarName}`));
+    verify(partial, expected);
+    renameSync(partial, tarPath);
+    writeFileSync(sidecar, expected + "\n");
   }
-  verify();
 
   mkdirSync(nodeDest, { recursive: true });
   try {
-    execSync(`tar -xJf "${tarPath}" --strip-components=1 -C "${nodeDest}" ${stem}/bin/node ${stem}/LICENSE`, { stdio: "inherit" });
+    execFileSync("tar", ["-xJf", tarPath, "--strip-components=1", "-C", nodeDest, `${stem}/bin/node`, `${stem}/LICENSE`], { stdio: "inherit" });
     const nodeBin = join(nodeDest, "bin", "node");
     chmodSync(nodeBin, 0o755);
-    const got = execSync(`"${nodeBin}" --version`).toString().trim();
+    const got = execFileSync(nodeBin, ["--version"]).toString().trim();
     if (got !== `v${nodeVersion}`) throw new Error(`vendored node reports ${got}, expected v${nodeVersion}`);
   } catch (err) {
     rmSync(nodeDest, { recursive: true, force: true });
@@ -169,7 +192,13 @@ for (const name of ["LGPL-3.0.txt", "GPL-3.0.txt"]) {
 copyLicense(join(agentModules, "@img", libvips, "README.md"), "sharp-libvips-NOTICE");
 if (existsSync(join(agentModules, "@img", libvips, "LICENSE"))) copyLicense(join(agentModules, "@img", libvips, "LICENSE"), "sharp-prebuild-LICENSE");
 copyLicense(join(appRoot, "node_modules", "mupdf", "LICENSE"), "mupdf");
-if (process.platform === "linux") copyLicense(join(nodeDest, "LICENSE"), "node");
+if (process.platform === "linux") {
+  copyLicense(join(nodeDest, "LICENSE"), "node");
+} else {
+  // node.txt is tracked but only meaningful for the Linux-bundled Node: drop it from
+  // non-Linux bundles. Note: git will show it as deleted on a macOS/Windows build machine.
+  rmSync(join(licensesDir, "node.txt"), { force: true });
+}
 console.log(`licences -> ${licensesDir}`);
 
 function mitText(holder) {

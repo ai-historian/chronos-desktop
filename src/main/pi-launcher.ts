@@ -44,5 +44,7 @@ export function buildPiLaunch(opts: {
     PI_TELEMETRY: "0",
     CHRONOS_HTTP_PORT: String(opts.httpPort),
   };
+  // A workspace .env must not be able to switch a real Node into Electron-as-Node mode.
+  if (useNode) delete env.ELECTRON_RUN_AS_NODE;
   return { bin: useNode ? opts.vendor.nodeBin! : opts.execPath, args, env };
 }

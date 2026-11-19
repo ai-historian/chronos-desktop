@@ -77,7 +77,7 @@ test("uses the bundled node when nodeBin exists, without ELECTRON_RUN_AS_NODE", 
     assert.equal(l.env.CHRONOS_HTTP_PORT, "1");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test("falls back to Electron when nodeBin is not executable", () => {
+test("falls back to Electron when nodeBin is not executable", { skip: process.platform === "win32" }, () => {
   const dir = mkdtempSync(join(tmpdir(), "chronos-node-"));
   try {
     const nodeBin = join(dir, "node"); writeFileSync(nodeBin, "", { mode: 0o644 });
@@ -90,4 +90,22 @@ test("falls back to Electron when nodeBin is missing", () => {
   const l = buildPiLaunch({ vendor: { piCli: "/x/cli.js", agentDir: "/a", nodeBin: "/nope/node" }, workspaceDir: "/w", userDataDir: "/u", httpPort: 1, execPath: "/e" });
   assert.equal(l.bin, "/e");
   assert.equal(l.env.ELECTRON_RUN_AS_NODE, "1");
+});
+
+test("CHRONOS_AGENT_NODE overrides nodeBin; empty string is ignored", () => {
+  const base = { isPackaged: false, resourcesPath: "", appRoot: "/repo", platform: "linux" as const };
+  assert.equal(resolveVendorPaths({ ...base, env: { CHRONOS_AGENT_NODE: "/usr/bin/node" } }).nodeBin, "/usr/bin/node");
+  assert.equal(resolveVendorPaths({ ...base, env: { CHRONOS_AGENT_NODE: "" } }).nodeBin, undefined);
+  assert.equal(resolveVendorPaths({ ...base, isPackaged: true, resourcesPath: "/r", env: { CHRONOS_AGENT_NODE: "/usr/bin/node" } }).nodeBin, "/usr/bin/node");
+});
+test("workspace .env cannot inject ELECTRON_RUN_AS_NODE on the node path", { skip: process.platform === "win32" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "chronos-node-"));
+  try {
+    const nodeBin = join(dir, "node"); writeFileSync(nodeBin, "", { mode: 0o755 });
+    const ws = join(dir, "ws"); mkdirSync(join(ws, ".chronos"), { recursive: true });
+    writeFileSync(join(ws, ".chronos", ".env"), "ELECTRON_RUN_AS_NODE=1\n");
+    const l = buildPiLaunch({ vendor: { piCli: "/x/cli.js", agentDir: "/a", nodeBin }, workspaceDir: ws, userDataDir: "/u", httpPort: 1, execPath: "/e" });
+    assert.equal(l.bin, nodeBin);
+    assert.equal("ELECTRON_RUN_AS_NODE" in l.env, false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

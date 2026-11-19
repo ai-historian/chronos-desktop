@@ -72,7 +72,7 @@ esbuild does not type-check — always run `npm run typecheck`.
   `openOrOfferInit` in `src/main/main.ts`.
 - **Tests.** Unit/integration in `test/*.test.ts`; `test/mock-pi.mjs` is a deterministic
   fake pi; the Electron e2e test is `test/e2e/boot.spec.ts` using the test-only env flags
-  `CHRONOS_PI_LAUNCH_OVERRIDE` and `CHRONOS_E2E=1`.
+  `CHRONOS_PI_LAUNCH_OVERRIDE` and `CHRONOS_E2E=1`. `CHRONOS_AGENT_NODE=<path>` (any platform, packaged or dev) runs the agent under that Node instead of Electron/the bundled one.
 
 ## The agent (`agent/`)
 
