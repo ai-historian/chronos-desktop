@@ -131,8 +131,11 @@ if (process.platform === "linux") {
   if (existsSync(tarPath)) {
     // Warm cache: verify against the digest recorded at download time (offline-capable);
     // without the sidecar, fall back to nodejs.org's SHASUMS256.txt.
-    const expected = existsSync(sidecar) ? readFileSync(sidecar, "utf-8").trim() : await fetchExpected();
+    const fromSidecar = existsSync(sidecar);
+    const expected = fromSidecar ? readFileSync(sidecar, "utf-8").trim() : await fetchExpected();
     verify(tarPath, expected);
+    if (!fromSidecar) writeFileSync(sidecar, expected + "\n");
+    console.log(`using cached ${tarName} (digest from ${fromSidecar ? "sidecar" : "SHASUMS256.txt"})`);
   } else {
     const expected = await fetchExpected();
     console.log(`downloading ${base}/${tarName}`);
