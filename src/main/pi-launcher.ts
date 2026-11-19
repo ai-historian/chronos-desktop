@@ -4,7 +4,8 @@ import { readEnvFile } from "./env-file";
 import type { VendorPaths } from "./paths";
 
 // Builds the argv/env for spawning the bundled pi in RPC mode. pi runs under
-// Electron's own binary as plain Node (ELECTRON_RUN_AS_NODE). `env` holds only
+// Electron's own binary as plain Node (ELECTRON_RUN_AS_NODE), or under the bundled
+// Node when vendor.nodeBin exists. `env` holds only
 // Chronos-specific vars; PiRpcSession merges process.env itself.
 
 export interface PiLaunch {
@@ -26,15 +27,17 @@ export function buildPiLaunch(opts: {
   const skillsDir = join(opts.workspaceDir, "skills");
   if (existsSync(skillsDir)) args.push("--skill", skillsDir);
 
+  // A bundled real Node (packaged Linux) replaces Electron-as-Node when present.
+  const useNode = !!opts.vendor.nodeBin && existsSync(opts.vendor.nodeBin);
   const env: Record<string, string> = {
     // Workspace keys first so they can never override the launcher's own vars.
     ...readEnvFile(join(opts.workspaceDir, ".chronos", ".env")),
-    ELECTRON_RUN_AS_NODE: "1",
+    ...(useNode ? {} : { ELECTRON_RUN_AS_NODE: "1" }),
     PI_CODING_AGENT_DIR: join(opts.userDataDir, "pi-agent"),
     PI_CODING_AGENT_SESSION_DIR: join(opts.workspaceDir, "sessions"),
     PI_SKIP_VERSION_CHECK: "1",
     PI_TELEMETRY: "0",
     CHRONOS_HTTP_PORT: String(opts.httpPort),
   };
-  return { bin: opts.execPath, args, env };
+  return { bin: useNode ? opts.vendor.nodeBin! : opts.execPath, args, env };
 }

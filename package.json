@@ -16,6 +16,7 @@
   "type": "commonjs",
   "main": "out/main.js",
   "piVersion": "1.5.0",
+  "nodeRuntimeVersion": "24.22.2",
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",

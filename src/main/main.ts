@@ -710,7 +710,10 @@ app.whenReady().then(() => {
   recent = new RecentStore(join(app.getPath("userData"), "recent.json"));
   settings = readAppSettings(app.getPath("userData"));
   const vendor = resolveVendorPaths({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appRoot: app.getAppPath() });
-  console.log(`[chronos] pi cli: ${vendor.piCli} (agent: ${vendor.agentDir})`);
+  console.log(`[chronos] pi cli: ${vendor.piCli} (agent: ${vendor.agentDir}, runtime: ${vendor.nodeBin ?? "electron"})`);
+  if (vendor.nodeBin && !existsSync(vendor.nodeBin)) {
+    console.warn(`[chronos] bundled node missing at ${vendor.nodeBin}; running the agent under Electron`);
+  }
   rebuildMenu();
   startUpdates();
   rebuildMenu();
