@@ -74,7 +74,9 @@ icon opens the welcome window. On Linux and Windows the app quits with its last 
 ### The `vendor/` rule
 
 `vendor/` (gitignored) is only for packaged builds. `npm run dist` runs `bundle-agent`,
-which copies the pinned pi runtime and the built `agent/` pi-package into `vendor/`, and
+which copies the pinned pi runtime and the built `agent/` pi-package into `vendor/` (on Linux
+also the official Node `nodeRuntimeVersion` as `vendor/node/`, downloaded and SHA-256-verified
+into the gitignored `.cache/node/`), and
 electron-builder ships them as `resources/vendor/`. `npm run dev` / `npm start` never read
 `vendor/`. They run pi from `node_modules/@earendil-works/pi-coding-agent` and the agent
 from `agent/` (see `src/main/paths.ts`). Don't edit files in `vendor/`, and don't
@@ -101,7 +103,10 @@ npm run dist -- --linux AppImage deb   # pick targets explicitly
 ```
 
 - `npm run bundle-agent` fills the gitignored `vendor/` with the pi runtime and the built
-  `agent/` pi-package (production `node_modules`), and refreshes `resources/licenses/`.
+  `agent/` pi-package (production `node_modules`), and refreshes `resources/licenses/`. On
+  Linux it also vendors Node `nodeRuntimeVersion`: packaged Linux builds run pi with it
+  rather than Electron's binary, because sharp's libvips needs a newer GLib than Electron
+  loads on some distros. Needs network access on the first run (cached afterwards).
 - `npm run build` bundles the app into `out/` with esbuild.
 - `electron-builder` (config in `electron-builder.yml`) writes the artefacts to `dist/`:
   `Chronos.AppImage` (version-free, so in-place updates keep the file name and launchers keep

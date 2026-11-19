@@ -16,10 +16,15 @@
 // is copied whole (package.json, dist/ incl. dist/bundle/chunks/, node_modules/)
 // after asserting its version equals package.json "piVersion".
 //
+// Node runtime (Linux only): the official Node tarball for package.json "nodeRuntimeVersion"
+// is downloaded to .cache/node/, verified against nodejs.org's SHASUMS256.txt and extracted
+// to vendor/node/. Packaged Linux builds run pi with it instead of Electron's binary.
+//
 // Usage: node scripts/bundle-agent.mjs
 
 import { execSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -72,6 +77,58 @@ for (const entry of ["dist", "prompts", "skills", "package.json", "package-lock.
 run("npm ci --omit=dev --omit=peer", agentDest);
 console.log(`vendored chronos agent -> ${agentDest}`);
 
+// --- node runtime (Linux) -----------------------------------------------
+// sharp's libvips needs a newer GLib than Electron's bundled Node can load on
+// some distros, so packaged Linux builds run pi with an official Node binary.
+const nodeDest = join(vendor, "node");
+rmSync(nodeDest, { recursive: true, force: true });
+if (process.platform === "linux") {
+  const nodeVersion = readJson(join(appRoot, "package.json")).nodeRuntimeVersion;
+  if (!nodeVersion) throw new Error("package.json has no nodeRuntimeVersion");
+  const nodeArch = { x64: "x64", arm64: "arm64" }[process.arch];
+  if (!nodeArch) throw new Error(`unsupported architecture for the bundled node: ${process.arch}`);
+  const base = `https://nodejs.org/dist/v${nodeVersion}`;
+  const stem = `node-v${nodeVersion}-linux-${nodeArch}`;
+  const tarName = `${stem}.tar.xz`;
+  const cacheDir = join(appRoot, ".cache", "node");
+  const tarPath = join(cacheDir, tarName);
+  mkdirSync(cacheDir, { recursive: true });
+
+  const download = async (url) => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`download failed: ${url} -> HTTP ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  };
+  const sums = (await download(`${base}/SHASUMS256.txt`)).toString("utf-8");
+  const expected = sums.split("\n").map((l) => l.trim().split(/\s+/)).find((p) => p[1] === tarName)?.[0];
+  if (!expected) throw new Error(`no SHA-256 for ${tarName} in ${base}/SHASUMS256.txt`);
+  const verify = () => {
+    const actual = createHash("sha256").update(readFileSync(tarPath)).digest("hex");
+    if (actual !== expected) {
+      rmSync(tarPath, { force: true });
+      throw new Error(`SHA-256 mismatch for ${tarName}: expected ${expected}, got ${actual} (removed the cached file)`);
+    }
+  };
+  if (!existsSync(tarPath)) {
+    console.log(`downloading ${base}/${tarName}`);
+    writeFileSync(tarPath, await download(`${base}/${tarName}`));
+  }
+  verify();
+
+  mkdirSync(nodeDest, { recursive: true });
+  try {
+    execSync(`tar -xJf "${tarPath}" --strip-components=1 -C "${nodeDest}" ${stem}/bin/node ${stem}/LICENSE`, { stdio: "inherit" });
+    const nodeBin = join(nodeDest, "bin", "node");
+    chmodSync(nodeBin, 0o755);
+    const got = execSync(`"${nodeBin}" --version`).toString().trim();
+    if (got !== `v${nodeVersion}`) throw new Error(`vendored node reports ${got}, expected v${nodeVersion}`);
+  } catch (err) {
+    rmSync(nodeDest, { recursive: true, force: true });
+    throw err;
+  }
+  console.log(`vendored node v${nodeVersion} (linux-${nodeArch}) -> vendor/node/bin/node`);
+}
+
 // --- licences -----------------------------------------------------------
 mkdirSync(licensesDir, { recursive: true });
 const copyLicense = (from, name) => {
@@ -107,6 +164,7 @@ for (const name of ["LGPL-3.0.txt", "GPL-3.0.txt"]) {
 copyLicense(join(agentModules, "@img", libvips, "README.md"), "sharp-libvips-NOTICE");
 if (existsSync(join(agentModules, "@img", libvips, "LICENSE"))) copyLicense(join(agentModules, "@img", libvips, "LICENSE"), "sharp-prebuild-LICENSE");
 copyLicense(join(appRoot, "node_modules", "mupdf", "LICENSE"), "mupdf");
+if (process.platform === "linux") copyLicense(join(nodeDest, "LICENSE"), "node");
 console.log(`licences -> ${licensesDir}`);
 
 function mitText(holder) {

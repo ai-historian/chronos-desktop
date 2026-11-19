@@ -46,7 +46,9 @@ esbuild does not type-check — always run `npm run typecheck`.
   `TreeHost` (`src/main/tree-host.ts`) serves the file tree and file open/save; every
   renderer-supplied path is realpath-validated inside the workspace, dot paths refused.
 - **pi runtime.** `src/main/pi-launcher.ts` builds pi's argv/env: pi runs under Electron's
-  binary with `ELECTRON_RUN_AS_NODE=1`, `PI_CODING_AGENT_DIR=<userData>/pi-agent` (never
+  binary with `ELECTRON_RUN_AS_NODE=1` (packaged Linux builds instead use the bundled official
+  Node `nodeRuntimeVersion` from `package.json`, vendored by `bundle-agent`, because sharp's
+  libvips conflicts with Electron's system GLib), `PI_CODING_AGENT_DIR=<userData>/pi-agent` (never
   `~/.pi`), `PI_CODING_AGENT_SESSION_DIR=<workspace>/sessions`, the agent via
   `--extension agent/dist/extensions`, workspace skills via `--skill`. `src/main/paths.ts`
   picks vendored (packaged) or dev (node_modules pi + `agent/`) locations.
