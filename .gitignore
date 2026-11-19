@@ -6,3 +6,4 @@ vendor/
 .env
 *.tgz
 .superpowers/
+.cache/

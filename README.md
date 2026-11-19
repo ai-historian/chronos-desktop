@@ -24,6 +24,8 @@ npm run watch                      # rebuild out/ on change (reload the window t
 npm run typecheck                  # tsc for main/preload/shared/tests and for the renderer
 ```
 
+On Linux, `CHRONOS_AGENT_NODE=/usr/bin/node npm run dev` runs the agent under that Node to avoid the GLib conflict in dev.
+
 ### Tests
 
 ```bash
@@ -74,7 +76,9 @@ icon opens the welcome window. On Linux and Windows the app quits with its last 
 ### The `vendor/` rule
 
 `vendor/` (gitignored) is only for packaged builds. `npm run dist` runs `bundle-agent`,
-which copies the pinned pi runtime and the built `agent/` pi-package into `vendor/`, and
+which copies the pinned pi runtime and the built `agent/` pi-package into `vendor/` (on Linux
+also the official Node `nodeRuntimeVersion` as `vendor/node/`, downloaded and SHA-256-verified
+into the gitignored `.cache/node/`), and
 electron-builder ships them as `resources/vendor/`. `npm run dev` / `npm start` never read
 `vendor/`. They run pi from `node_modules/@earendil-works/pi-coding-agent` and the agent
 from `agent/` (see `src/main/paths.ts`). Don't edit files in `vendor/`, and don't
@@ -101,7 +105,15 @@ npm run dist -- --linux AppImage deb   # pick targets explicitly
 ```
 
 - `npm run bundle-agent` fills the gitignored `vendor/` with the pi runtime and the built
-  `agent/` pi-package (production `node_modules`), and refreshes `resources/licenses/`.
+  `agent/` pi-package (production `node_modules`), and refreshes `resources/licenses/`. On
+  Linux it also vendors Node `nodeRuntimeVersion`: packaged Linux builds run pi with it
+  rather than Electron's binary, because Electron links the system GLib and sharp's bundled
+  libvips resolves its `g_object_*` calls to that copy instead of its own (assertion failure
+  on GLib 2.80, crash on newer GLib), while a plain Node links no GLib. Keep
+  `nodeRuntimeVersion` equal to the Node inside the pinned Electron
+  (`ELECTRON_RUN_AS_NODE=1 npx electron -p process.versions.node`) and bump it with Electron.
+  Network access is needed only when the tarball is not yet cached in `.cache/node/`; a cached
+  tarball is re-verified offline against the SHA-256 recorded next to it at download time.
 - `npm run build` bundles the app into `out/` with esbuild.
 - `electron-builder` (config in `electron-builder.yml`) writes the artefacts to `dist/`:
   `Chronos.AppImage` (version-free, so in-place updates keep the file name and launchers keep

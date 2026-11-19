@@ -109,6 +109,11 @@ jobs:
             .cache/electron-builder
           key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
 
+      - uses: actions/cache@v4
+        with:
+          path: .cache/node
+          key: node-runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package.json') }}
+
       - name: Install
         run: npm ci
 

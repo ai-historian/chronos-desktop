@@ -6,7 +6,7 @@ import { WindowTransport } from "./window-transport";
 import type { Transport } from "./transport";
 import { AgentHost } from "./agent-host";
 import { TreeHost } from "./tree-host";
-import { buildPiLaunch, type PiLaunch } from "./pi-launcher";
+import { buildPiLaunch, isExecutable, type PiLaunch } from "./pi-launcher";
 import { resolveVendorPaths, unpackedPath } from "./paths";
 import { registerChronosFileScheme, installChronosFileHandler, toChronosFileUrl } from "./protocol-handler";
 import { providerChoices, saveApiKey, startAnthropicOauth, submitAnthropicOauthCode, cancelAnthropicOauth } from "./login";
@@ -710,7 +710,10 @@ app.whenReady().then(() => {
   recent = new RecentStore(join(app.getPath("userData"), "recent.json"));
   settings = readAppSettings(app.getPath("userData"));
   const vendor = resolveVendorPaths({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appRoot: app.getAppPath() });
-  console.log(`[chronos] pi cli: ${vendor.piCli} (agent: ${vendor.agentDir})`);
+  console.log(`[chronos] pi cli: ${vendor.piCli} (agent: ${vendor.agentDir}, runtime: ${vendor.nodeBin ?? "electron"})`);
+  if (vendor.nodeBin && !isExecutable(vendor.nodeBin)) {
+    console.warn(`[chronos] bundled node missing or not executable at ${vendor.nodeBin}; running the agent under Electron`);
+  }
   rebuildMenu();
   startUpdates();
   rebuildMenu();

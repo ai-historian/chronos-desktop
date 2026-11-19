@@ -7,20 +7,28 @@ import { join } from "node:path";
 export interface VendorPaths {
   piCli: string;
   agentDir: string;
+  /** Bundled official Node (packaged Linux) or the CHRONOS_AGENT_NODE override; the agent runs under it instead of Electron. */
+  nodeBin?: string;
 }
 
-export function resolveVendorPaths(opts: { isPackaged: boolean; resourcesPath: string; appRoot: string }): VendorPaths {
+export function resolveVendorPaths(opts: { isPackaged: boolean; resourcesPath: string; appRoot: string; platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv }): VendorPaths {
+  const override = (opts.env ?? process.env).CHRONOS_AGENT_NODE;
+  const nodeOverride = typeof override === "string" && override !== "" ? { nodeBin: override } : undefined;
   if (opts.isPackaged) {
+    const platform = opts.platform ?? process.platform;
     return {
       // vendor/pi is an npm install root (see scripts/bundle-agent.mjs), so pi and all
       // of its dependencies sit under vendor/pi/node_modules.
       piCli: join(opts.resourcesPath, "vendor", "pi", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js"),
       agentDir: join(opts.resourcesPath, "vendor", "chronos"),
+      ...(platform === "linux" ? { nodeBin: join(opts.resourcesPath, "vendor", "node", "bin", "node") } : {}),
+      ...nodeOverride,
     };
   }
   return {
     piCli: join(opts.appRoot, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js"),
     agentDir: join(opts.appRoot, "agent"),
+    ...nodeOverride,
   };
 }
 
